@@ -91,6 +91,7 @@ let
       pkgs.bashInteractive
       pkgs.coreutils
       pkgs.gh
+      pkgs.npins
       pkgs.python3
       pkgs.git
       pkgs.curl
