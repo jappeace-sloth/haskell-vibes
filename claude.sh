@@ -32,8 +32,10 @@ if [ ! -f "$INSTANCE_JSON" ]; then
     echo "{}" > "$INSTANCE_JSON"
 fi
 
-# Ensure mcpServers is configured in instance JSON
-# Claude Code reads MCP servers from ~/.claude.json, NOT from settings.json
+# Ensure mcpServers is configured in instance JSON.
+# Claude Code reads MCP servers from ~/.claude.json, NOT from ~/.claude/settings.json.
+# settings.json only handles permissions, hooks, and behavior — mcpServers there is silently ignored.
+# We also delete stale per-project mcpServers that Claude Code writes during sessions.
 MCP_CONFIG='{"playwright":{"command":"mcp-server-playwright","args":["--headless","--no-sandbox","--isolated","--ignore-https-errors","--executable-path","/usr/local/bin/chromium"]}}'
 UPDATED_JSON=$(jq --argjson mcp "$MCP_CONFIG" 'del(.mcpServers) | .mcpServers = $mcp | if .projects then .projects |= map_values(del(.mcpServers)) else . end' "$INSTANCE_JSON")
 echo "$UPDATED_JSON" > "$INSTANCE_JSON"
