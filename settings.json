@@ -27,5 +27,11 @@
       }
     ]
   },
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "mcpServers": {
+    "playwright": {
+      "command": "mcp-server-playwright",
+      "args": ["--headless", "--no-sandbox", "--isolated"]
+    }
+  }
 }

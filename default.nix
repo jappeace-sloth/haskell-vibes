@@ -83,6 +83,17 @@ let
     ${pkgs.piper-tts}/bin/piper -m "$MODEL" "$@"
   '';
 
+  playwrightMcp = pkgs.playwright-mcp.override {
+    playwright-driver = pkgs.playwright-driver // {
+      browsers = pkgs.playwright-driver.browsers.override {
+        withFirefox = false;
+        withWebkit = false;
+        withFfmpeg = false;
+        withChromiumHeadlessShell = false;
+      };
+    };
+  };
+
   entrypoint = pkgs.writeScript "entrypoint" (builtins.readFile ./entrypoint.sh);
 
   env = pkgs.buildEnv {
@@ -110,6 +121,7 @@ let
       pkgs.util-linux
       pkgs.jq
       pkgs.openssh
+      playwrightMcp
       (pkgs.runCommand "setup-env" {} ''
     # Create necessary directories (added var/empty for nixbld users)
 

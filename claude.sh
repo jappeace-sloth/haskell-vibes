@@ -87,6 +87,7 @@ docker run -it \
     --name "$INSTANCE_NAME" \
     --hostname "$INSTANCE_NAME" \
     "${DOCKER_PLATFORM_ARGS[@]}" \
+    --shm-size=256m \
     --tmpfs /tmp:rw,exec,mode=1777 \
     --init \
     "${KVM_ARGS[@]}" \

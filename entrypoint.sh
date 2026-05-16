@@ -45,6 +45,7 @@ fi
 
 echo "Nix daemon is live. Dropping privileges..."
 
+
 # Execute the main command as the host user mapping
 # NOTE: This requires 'su-exec' or 'gosu' to be installed in your Nix image.
 exec su-exec ${CLAUDE_UID}:${CLAUDE_GID} "$@"
