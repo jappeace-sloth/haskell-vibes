@@ -45,15 +45,14 @@ fi
 
 echo "Nix daemon is live. Dropping privileges..."
 
-# Inject Playwright MCP server config if not already present
+# Ensure Playwright MCP server config is present and up-to-date
 # Note: .claude.json is a bind mount, so we can't mv over it — write in-place via variable
 CLAUDE_JSON="/home/claude/.claude.json"
+PLAYWRIGHT_CONFIG='{"command": "mcp-server-playwright", "args": ["--headless", "--no-sandbox", "--isolated"]}'
 if [ -f "$CLAUDE_JSON" ]; then
-    if ! jq -e '.mcpServers.playwright' "$CLAUDE_JSON" > /dev/null 2>&1; then
-        content=$(jq '.mcpServers = (.mcpServers // {}) + {"playwright": {"command": "mcp-server-playwright", "args": ["--headless", "--no-sandbox", "--isolated"]}}' "$CLAUDE_JSON")
-        echo "$content" > "$CLAUDE_JSON"
-        chown ${CLAUDE_UID}:${CLAUDE_GID} "$CLAUDE_JSON"
-    fi
+    content=$(jq --argjson pw "$PLAYWRIGHT_CONFIG" '.mcpServers = (.mcpServers // {}) + {"playwright": $pw}' "$CLAUDE_JSON")
+    echo "$content" > "$CLAUDE_JSON"
+    chown ${CLAUDE_UID}:${CLAUDE_GID} "$CLAUDE_JSON"
 fi
 
 # Execute the main command as the host user mapping
