@@ -31,7 +31,7 @@
   "mcpServers": {
     "playwright": {
       "command": "mcp-server-playwright",
-      "args": ["--headless", "--no-sandbox", "--isolated"]
+      "args": ["--headless", "--no-sandbox", "--isolated", "--ignore-https-errors", "--executable-path", "/usr/local/bin/chromium"]
     }
   }
 }
