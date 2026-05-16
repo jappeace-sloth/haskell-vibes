@@ -35,7 +35,7 @@ fi
 # Ensure mcpServers is configured in instance JSON
 # Claude Code reads MCP servers from ~/.claude.json, NOT from settings.json
 MCP_CONFIG='{"playwright":{"command":"mcp-server-playwright","args":["--headless","--no-sandbox","--isolated","--ignore-https-errors","--executable-path","/usr/local/bin/chromium"]}}'
-UPDATED_JSON=$(jq --argjson mcp "$MCP_CONFIG" '.mcpServers = $mcp' "$INSTANCE_JSON")
+UPDATED_JSON=$(jq --argjson mcp "$MCP_CONFIG" 'del(.mcpServers) | .mcpServers = $mcp | if .projects then .projects |= map_values(del(.mcpServers)) else . end' "$INSTANCE_JSON")
 echo "$UPDATED_JSON" > "$INSTANCE_JSON"
 
 # Map instance name to voice model name
