@@ -46,11 +46,12 @@ fi
 echo "Nix daemon is live. Dropping privileges..."
 
 # Inject Playwright MCP server config if not already present
+# Note: .claude.json is a bind mount, so we can't mv over it — write in-place via variable
 CLAUDE_JSON="/home/claude/.claude.json"
 if [ -f "$CLAUDE_JSON" ]; then
     if ! jq -e '.mcpServers.playwright' "$CLAUDE_JSON" > /dev/null 2>&1; then
-        jq '.mcpServers = (.mcpServers // {}) + {"playwright": {"command": "mcp-server-playwright", "args": ["--headless"]}}' \
-            "$CLAUDE_JSON" > "${CLAUDE_JSON}.tmp" && mv "${CLAUDE_JSON}.tmp" "$CLAUDE_JSON"
+        content=$(jq '.mcpServers = (.mcpServers // {}) + {"playwright": {"command": "mcp-server-playwright", "args": ["--headless"]}}' "$CLAUDE_JSON")
+        echo "$content" > "$CLAUDE_JSON"
         chown ${CLAUDE_UID}:${CLAUDE_GID} "$CLAUDE_JSON"
     fi
 fi
