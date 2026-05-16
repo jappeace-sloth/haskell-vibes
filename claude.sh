@@ -32,6 +32,12 @@ if [ ! -f "$INSTANCE_JSON" ]; then
     echo "{}" > "$INSTANCE_JSON"
 fi
 
+# Ensure mcpServers is configured in instance JSON
+# Claude Code reads MCP servers from ~/.claude.json, NOT from settings.json
+MCP_CONFIG='{"playwright":{"command":"mcp-server-playwright","args":["--headless","--no-sandbox","--isolated","--ignore-https-errors","--executable-path","/usr/local/bin/chromium"]}}'
+UPDATED_JSON=$(jq --argjson mcp "$MCP_CONFIG" '.mcpServers = $mcp' "$INSTANCE_JSON")
+echo "$UPDATED_JSON" > "$INSTANCE_JSON"
+
 # Map instance name to voice model name
 case "$INSTANCE_NAME" in
   stan)  VOICE_NAME="joe" ;;
