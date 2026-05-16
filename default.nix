@@ -83,16 +83,23 @@ let
     ${pkgs.piper-tts}/bin/piper -m "$MODEL" "$@"
   '';
 
+  playwrightBrowsers = pkgs.playwright-driver.browsers.override {
+    withFirefox = false;
+    withWebkit = false;
+    withFfmpeg = false;
+    withChromiumHeadlessShell = false;
+  };
+
   playwrightMcp = pkgs.playwright-mcp.override {
     playwright-driver = pkgs.playwright-driver // {
-      browsers = pkgs.playwright-driver.browsers.override {
-        withFirefox = false;
-        withWebkit = false;
-        withFfmpeg = false;
-        withChromiumHeadlessShell = false;
-      };
+      browsers = playwrightBrowsers;
     };
   };
+
+  chromiumBin = pkgs.runCommand "chromium-bin" {} ''
+    mkdir -p $out/usr/local/bin
+    ln -s ${playwrightBrowsers}/chromium-*/chrome-linux64/chrome $out/usr/local/bin/chromium
+  '';
 
   entrypoint = pkgs.writeScript "entrypoint" (builtins.readFile ./entrypoint.sh);
 
@@ -122,6 +129,7 @@ let
       pkgs.jq
       pkgs.openssh
       playwrightMcp
+      chromiumBin
       (pkgs.runCommand "setup-env" {} ''
     # Create necessary directories (added var/empty for nixbld users)
 
