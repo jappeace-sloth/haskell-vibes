@@ -82,6 +82,12 @@ if [ -e /dev/kvm ] && [ -w /dev/kvm ]; then
     KVM_ARGS=("--device" "/dev/kvm")
 fi
 
+# Optional Reddit credentials (username hardcoded, password from file)
+REDDIT_SECRET_ARGS=()
+if [ -f ~/.reddit_secret ]; then
+    REDDIT_SECRET_ARGS=("-e" "REDDIT_USERNAME=jappeace-sloth" "-e" "REDDIT_PASSWORD=$(cat ~/.reddit_secret)")
+fi
+
 # Run the container
 docker run -it \
     --name "$INSTANCE_NAME" \
@@ -98,6 +104,7 @@ docker run -it \
     -e TERM=xterm-256color \
     -e COLORTERM=truecolor \
     -e GH_TOKEN="$(cat ~/.gh_token)" \
+    "${REDDIT_SECRET_ARGS[@]}" \
     -e HOME="/home/claude" \
     -e CLAUDE_UID="$(id -u)" \
     -e CLAUDE_GID="$(id -g)" \
