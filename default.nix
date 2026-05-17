@@ -115,7 +115,15 @@ let
       overrides = hnew: hold: {
         mcp-server = pkgs.haskell.lib.dontCheck
           (hnew.callCabal2nix "mcp-server" mcp-server-src { });
-        mcp-hoogle = hnew.callCabal2nix "mcp-hoogle" sources.mcp-hoogle { };
+        mcp-hoogle = pkgs.haskell.lib.overrideCabal
+          (hnew.callCabal2nix "mcp-hoogle" sources.mcp-hoogle { })
+          (drv: {
+            enableLibraryProfiling = false;
+            enableExecutableProfiling = false;
+            doHaddock = false;
+            enableSharedExecutables = false;
+            postFixup = "rm -rf $out/lib $out/nix-support $out/share/doc";
+          });
       };
     };
   in hpkgs.mcp-hoogle;
