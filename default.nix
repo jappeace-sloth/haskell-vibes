@@ -101,6 +101,25 @@ let
     ln -s ${playwrightBrowsers}/chromium-*/chrome-linux64/chrome $out/usr/local/bin/chromium
   '';
 
+  # Use our fork of mcp-server with protocol negotiation fix:
+  # https://github.com/drshade/haskell-mcp-server/pull/11
+  mcp-server-src = pkgs.fetchFromGitHub {
+    owner = "jappeace-sloth";
+    repo = "haskell-mcp-server";
+    rev = "5b63c34";
+    hash = "sha256-+55fUuWijK3cr1Jo43y/GtaE058HWsEjRt2jjE0hax4=";
+  };
+
+  mcpHoogle = let
+    hpkgs = pkgs.haskellPackages.override {
+      overrides = hnew: hold: {
+        mcp-server = pkgs.haskell.lib.dontCheck
+          (hnew.callCabal2nix "mcp-server" mcp-server-src { });
+        mcp-hoogle = hnew.callCabal2nix "mcp-hoogle" sources.mcp-hoogle { };
+      };
+    };
+  in hpkgs.mcp-hoogle;
+
   entrypoint = pkgs.writeScript "entrypoint" (builtins.readFile ./entrypoint.sh);
 
   env = pkgs.buildEnv {
@@ -130,6 +149,12 @@ let
       pkgs.openssh
       playwrightMcp
       chromiumBin
+      mcpHoogle
+      (pkgs.writeTextDir "etc/image-manifest" ''
+        mcp-hoogle-rev: ${builtins.substring 0 7 sources.mcp-hoogle.revision}
+        mcp-server-rev: ${mcp-server-src.rev}
+        built-epoch: ${toString builtins.currentTime}
+      '')
       (pkgs.runCommand "setup-env" {} ''
     # Create necessary directories (added var/empty for nixbld users)
 

@@ -1,11 +1,24 @@
 {
   "pins": {
+    "mcp-hoogle": {
+      "type": "Git",
+      "repository": {
+        "type": "GitHub",
+        "owner": "jappeace",
+        "repo": "mcp-hoogle"
+      },
+      "branch": "master",
+      "submodules": false,
+      "revision": "17740af990b70d06fa531f862166f5c2aae552ca",
+      "url": "https://github.com/jappeace/mcp-hoogle/archive/17740af990b70d06fa531f862166f5c2aae552ca.tar.gz",
+      "hash": "sha256-3EXW3SxLJQtJ1hRDviSRV/AzcpCBQyGEIvUl6AT1nP4="
+    },
     "nixpkgs": {
       "type": "Channel",
       "name": "nixpkgs-unstable",
       "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.05pre958799.917fec990948/nixexprs.tar.xz",
-      "hash": "0i6i707nw8yrjqs1zw5b019ai46h3frb28bl1lq6b0iwp9dl3b20"
+      "hash": "sha256-QKxBW7o8gmUwDXQhsbIb0JCoUgCr8B80ltkjbg840UQ="
     }
   },
-  "version": 5
+  "version": 7
 }
