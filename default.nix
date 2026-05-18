@@ -67,12 +67,34 @@ let
     cp ${morag-voice-src}/scottish-model.onnx.json $out/en/en_US/morag/medium/en_US-morag-medium.onnx.json
   '';
 
+  # Dutch (Belgian) female voice — nathalie, medium quality
+  piper-nathalie-voice-src = pkgs.fetchgit {
+    url = "https://huggingface.co/rhasspy/piper-voices";
+    rev = "834f23262168a7e809179465e4113f23f5a7d1f7";
+    hash = "sha256-qDOZncl1ImRr/TJBm9pfYy7aTZ/WvwBAqKEYa3pMIfQ=";
+    fetchLFS = true;
+    sparseCheckout = [
+      "nl/nl_BE/nathalie/medium/nl_BE-nathalie-medium.onnx"
+      "nl/nl_BE/nathalie/medium/nl_BE-nathalie-medium.onnx.json"
+    ];
+  };
+
+  # Remap nl_BE paths to en/en_US convention so piper wrapper + speak hook work unchanged
+  piper-nathalie-voice = pkgs.runCommand "piper-nathalie-voice" {} ''
+    mkdir -p $out/en/en_US/nathalie/medium
+    cp ${piper-nathalie-voice-src}/nl/nl_BE/nathalie/medium/nl_BE-nathalie-medium.onnx \
+       $out/en/en_US/nathalie/medium/en_US-nathalie-medium.onnx
+    cp ${piper-nathalie-voice-src}/nl/nl_BE/nathalie/medium/nl_BE-nathalie-medium.onnx.json \
+       $out/en/en_US/nathalie/medium/en_US-nathalie-medium.onnx.json
+  '';
+
   # Map voice name to its derivation, defaulting to amy for unknown names
   voiceDerivations = {
     amy = piper-amy-voice;
     joe = piper-joe-voice;
     cabal = piper-cabal-voice;
     morag = piper-morag-voice;
+    nathalie = piper-nathalie-voice;
   };
 
   selectedVoice = voiceDerivations.${voiceName} or piper-amy-voice;
