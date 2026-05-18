@@ -42,10 +42,11 @@ echo "$UPDATED_JSON" > "$INSTANCE_JSON"
 
 # Map instance name to voice model name
 case "$INSTANCE_NAME" in
-  stan)  VOICE_NAME="joe" ;;
-  cabal) VOICE_NAME="cabal" ;;
-  morag) VOICE_NAME="morag" ;;
-  *)     VOICE_NAME="amy" ;;
+  stan)     VOICE_NAME="joe" ;;
+  cabal)    VOICE_NAME="cabal" ;;
+  morag)    VOICE_NAME="morag" ;;
+  nathalie) VOICE_NAME="nathalie" ;;
+  *)        VOICE_NAME="amy" ;;
 esac
 
 # we got to build it's jail.
