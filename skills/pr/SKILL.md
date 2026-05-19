@@ -48,8 +48,22 @@ gh pr list --head "FORK-OWNER:$(git branch --show-current)" --repo TARGET/REPO -
 
 Evaluate the result:
 - **Open PR exists**: Update it (push new commits, optionally update description)
-- **Merged or closed PR exists**: Create a new PR (do NOT try to reopen)
+- **Merged or closed PR exists**: Check for leftover commits (see below), then create a new PR if needed
 - **No PR exists**: Create a new PR
+
+### 2b. Check for leftover commits after a merged PR
+
+A merged PR does NOT guarantee all local commits were included — the merge
+may have happened before you pushed your latest work. Always verify:
+
+```bash
+git fetch origin master  # (or main)
+git log --oneline origin/master..HEAD
+```
+
+If this shows commits, those were **not** included in the merge. Create a new
+branch from `origin/master`, cherry-pick the missing commits, and open a new PR.
+If there are no commits, the branch is fully merged and there is nothing to do.
 
 ### 3. Push the branch
 
