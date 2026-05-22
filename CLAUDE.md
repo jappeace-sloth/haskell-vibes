@@ -33,6 +33,7 @@ Each instance has its own project clones so two instances can work on the same p
 - A test should be less complex then the implementation.
 - Tests must assert behaviour and logic, not static content. Do not write tests that only verify text labels, column headings, or placeholder values exist — the compiler and type system already catch those.
 - A good test would fail if the logic were wrong. A bad test would only fail if you deleted or renamed a string literal.
+- Tests must call the actual application functions, not reimplement them. If the app does A → B → C, the test calls the function that does A → B → C — it does not manually call A, then B, then C. If no such function exists, factor one out from the application code first, then test through it. Smell: if your test code mirrors production code step-by-step, stop — find the highest-level application function you can test through, and use existing test infrastructure (fixtures, mock fetchers) rather than hand-constructing intermediate values.
 - We only test the current codebase, libraries are assumed to work.
 - Demo/test apps (e.g. imageDemoApp, scrollDemoApp) belong in test/ entry points, NOT in the library. Integration test entry points (test/*DemoMain.hs) should be self-contained — define the demo app inline rather than importing it from the library.
 
