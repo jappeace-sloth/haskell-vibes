@@ -18,6 +18,19 @@
       "name": "nixpkgs-unstable",
       "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.05pre958799.917fec990948/nixexprs.tar.xz",
       "hash": "sha256-QKxBW7o8gmUwDXQhsbIb0JCoUgCr8B80ltkjbg840UQ="
+    },
+    "tmux-mcp": {
+      "type": "Git",
+      "repository": {
+        "type": "GitHub",
+        "owner": "bnomei",
+        "repo": "tmux-mcp"
+      },
+      "branch": "main",
+      "submodules": false,
+      "revision": "626ec376ccfa916ee94bd5f662ea263b0763cfeb",
+      "url": "https://github.com/bnomei/tmux-mcp/archive/626ec376ccfa916ee94bd5f662ea263b0763cfeb.tar.gz",
+      "hash": "sha256-PuhTT6Bd3HLLzXGvgfFmFV+P2OfXgXmKhnMYHcz6jDI="
     }
   },
   "version": 7

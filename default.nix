@@ -150,6 +150,13 @@ let
     };
   in hpkgs.mcp-hoogle;
 
+  tmuxMcp = pkgs.rustPlatform.buildRustPackage {
+    pname = "tmux-mcp-rs";
+    version = "0.2.1";
+    src = sources.tmux-mcp;
+    cargoHash = "sha256-MZV/yuTMOdsOQqjdNflaIJSJzgQ3KXAo5xgnesmltoE=";
+  };
+
   entrypoint = pkgs.writeScript "entrypoint" (builtins.readFile ./entrypoint.sh);
 
   env = pkgs.buildEnv {
@@ -179,10 +186,13 @@ let
       pkgs.openssh
       playwrightMcp
       chromiumBin
+      pkgs.tmux
+      tmuxMcp
       mcpHoogle
       (pkgs.writeTextDir "etc/image-manifest" ''
         mcp-hoogle-rev: ${builtins.substring 0 7 sources.mcp-hoogle.revision}
         mcp-server-rev: ${mcp-server-src.rev}
+        tmux-mcp-rev: ${builtins.substring 0 7 sources.tmux-mcp.revision}
         built-epoch: ${toString builtins.currentTime}
       '')
       (pkgs.runCommand "setup-env" {} ''
