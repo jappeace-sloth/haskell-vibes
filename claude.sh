@@ -36,7 +36,7 @@ fi
 # Claude Code reads MCP servers from ~/.claude.json, NOT from ~/.claude/settings.json.
 # settings.json only handles permissions, hooks, and behavior — mcpServers there is silently ignored.
 # We also delete stale per-project mcpServers that Claude Code writes during sessions.
-MCP_CONFIG='{"playwright":{"command":"mcp-server-playwright","args":["--headless","--no-sandbox","--isolated","--ignore-https-errors","--executable-path","/usr/local/bin/chromium"]},"hoogle":{"command":"mcp-hoogle","args":["serve"]}}'
+MCP_CONFIG='{"playwright":{"command":"mcp-server-playwright","args":["--headless","--no-sandbox","--isolated","--ignore-https-errors","--executable-path","/usr/local/bin/chromium"]},"hoogle":{"command":"mcp-hoogle","args":["serve"]},"tmux":{"command":"tmux-mcp-rs","args":[]}}'
 UPDATED_JSON=$(jq --argjson mcp "$MCP_CONFIG" 'del(.mcpServers) | .mcpServers = $mcp | if .projects then .projects |= map_values(del(.mcpServers)) else . end' "$INSTANCE_JSON")
 echo "$UPDATED_JSON" > "$INSTANCE_JSON"
 
