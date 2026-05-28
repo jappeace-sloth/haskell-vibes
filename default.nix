@@ -184,6 +184,7 @@ let
       pkgs.util-linux
       pkgs.jq
       pkgs.openssh
+      pkgs.iana-etc
       playwrightMcp
       chromiumBin
       pkgs.tmux
