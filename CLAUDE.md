@@ -12,8 +12,11 @@
 - cabal update: Get latest packages, (undesired with nix based dependencies)
 - cabal build: Run the typechecker
 - cabal test: Run the test suite.
-- To search for Haskell modules, types, or documentation, ALWAYS query the Hoogle web API using curl:
-  `curl -s "https://hoogle.haskell.org/?mode=json&hoogle=YOUR_QUERY"`
+- To search for Haskell modules, types, or documentation, PREFER the local hoogle MCP server (`mcp__hoogle__search`, `mcp__hoogle__search_type`, `mcp__hoogle__lookup_module`).
+  - Before relying on it, check `mcp__hoogle__regeneration_status` once per session. The local database has to be built and that takes a while.
+  - While the database is still regenerating (or has never been built), fall back to the upstream Hoogle web API:
+    `curl -s "https://hoogle.haskell.org/?mode=json&hoogle=YOUR_QUERY"`
+  - Once `regeneration_status` reports the database is ready, switch to the MCP tools for the rest of the session and stop hitting the upstream API.
 - To read actual Hackage documentation, NEVER fetch raw HTML. Instead, use `w3m` via to dump the clean text of the page:
   `w3m -dump https://hackage.haskell.org/package/<package_name>`
 - To read a specific module's documentation on Hackage:
