@@ -5,11 +5,22 @@ set -xe
 # Ensure an instance name is provided as the first argument
 if [ -z "$1" ]; then
     echo "Error: Instance name required."
-    echo "Usage: $0 <instance_name>"
+    echo "Usage: $0 <instance_name> [--vanilla]"
     exit 1
 fi
 
 INSTANCE_NAME="$1"
+shift
+
+# Parse optional flags. --vanilla skips mounting CLAUDE.md and skills/, so the
+# container boots an unconfigured Claude (no personality, no skills, no project rules).
+VANILLA=0
+for arg in "$@"; do
+    case "$arg" in
+        --vanilla) VANILLA=1 ;;
+        *) echo "Error: unknown argument '$arg'"; exit 1 ;;
+    esac
+done
 
 mkdir -p ../vibes/$INSTANCE_NAME
 
@@ -97,6 +108,14 @@ if [ -f ~/.reddit_secret ]; then
     REDDIT_SECRET_ARGS=("-e" "REDDIT_USERNAME=jappeace-sloth" "-e" "REDDIT_PASSWORD=$(cat ~/.reddit_secret)")
 fi
 
+# Optional configuration mounts. In vanilla mode CLAUDE.md and skills/ are omitted
+# so the container starts with an unconfigured Claude.
+CONFIG_MOUNTS=()
+if [ "$VANILLA" -eq 0 ]; then
+    CONFIG_MOUNTS+=("-v" "$(pwd)/CLAUDE.md:/home/claude/.claude/CLAUDE.md")
+    CONFIG_MOUNTS+=("-v" "$(pwd)/skills:/home/claude/.claude/skills")
+fi
+
 # Run the container
 docker run -it \
     --name "$INSTANCE_NAME" \
@@ -124,11 +143,10 @@ docker run -it \
     -v "$(pwd)/instances/${INSTANCE_NAME}.json":/home/claude/.claude.json \
     -v "$(pwd)/instances/${INSTANCE_NAME}":/home/claude/.claude \
     -v "$(pwd)/settings.json":/home/claude/.claude/settings.json \
-    -v "$(pwd)/CLAUDE.md":/home/claude/.claude/CLAUDE.md \
+    "${CONFIG_MOUNTS[@]}" \
     -v "/run/user/$(id -u)/pulse:/run/user/1000/pulse" \
     -e PULSE_SERVER="unix:/run/user/1000/pulse/native" \
     -v "$(pwd)/../vibes/$INSTANCE_NAME":/home/claude/vibes \
-    -v "$(pwd)/skills":/home/claude/.claude/skills \
     -v "$(pwd)/character":/home/claude/character \
     -v "$(pwd)/hooks":/home/claude/.claude/hooks \
     --rm \
