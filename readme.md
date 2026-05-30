@@ -72,6 +72,12 @@ There are predefined scripts for existing instances:
 ./stan.sh    # Stan — uses joe voice
 ./cabal.sh   # Cabal — custom-trained voice + SoX effects
 ./morag.sh   # Morag — Scottish TTS voice
+./vanilla.sh # Vanilla — unconfigured Claude (no CLAUDE.md, no skills) for comparison
+```
+
+To start any instance without the project's CLAUDE.md and skills mounted, pass `--vanilla`:
+```
+./claude.sh <instance_name> --vanilla
 ```
 
 Each instance gets its own persistent state in `instances/<name>/` (Claude memory, settings)
@@ -92,11 +98,12 @@ supporting both Apple Silicon (arm64) and Intel (amd64).
 
 ## Instances
 
-| Name  | Voice | Personality |
-|-------|-------|-------------|
-| stan  | joe   | The second instance. Created cabal's voice. Called in when cabal's busy. |
-| cabal | cabal (custom + SoX DSP) | Named after the C&C Nod AI. Fiercely loyal, hungry to prove himself. Peace through code. |
-| morag | morag (Scottish TTS) | Scottish woman. Practical, no-nonsense, dry humour. The one who makes sure CI passes. |
+| Name    | Voice | Personality |
+|---------|-------|-------------|
+| stan    | joe   | The second instance. Created cabal's voice. Called in when cabal's busy. |
+| cabal   | cabal (custom + SoX DSP) | Named after the C&C Nod AI. Fiercely loyal, hungry to prove himself. Peace through code. |
+| morag   | morag (Scottish TTS) | Scottish woman. Practical, no-nonsense, dry humour. The one who makes sure CI passes. |
+| vanilla | amy   | Unconfigured Claude — no CLAUDE.md, no skills. For showcasing what a stock Claude does vs. a configured one. |
 
 ## WARNING
 I've seen it attempt to write into `/etc/shadow`
