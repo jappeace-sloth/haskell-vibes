@@ -41,10 +41,13 @@ Each instance has its own project clones so two instances can work on the same p
 - We only test the current codebase, libraries are assumed to work.
 - Demo/test apps (e.g. imageDemoApp, scrollDemoApp) belong in test/ entry points, NOT in the library. Integration test entry points (test/*DemoMain.hs) should be self-contained — define the demo app inline rather than importing it from the library.
 
-# Decision Log                                                  
+# Decision Log
 - When making significant architectural choices (library selection, design patterns,
-  data representation), write the decision and reasoning to memory before moving on.
+  data representation), record the decision as a comment near the relevant code.
+- Use a `-- Decision:` prefix so they are easy to grep for.
 - Format: what was chosen, what alternatives were considered, and why.
+- Do NOT write decisions to memory — memory is per-instance and is not shared
+  across agents or preserved in version control.
 
 # Workflow
 - If a task and the test suite don't align, ask for clarity
