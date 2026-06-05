@@ -51,19 +51,10 @@ MCP_CONFIG='{"playwright":{"command":"playwright-mcp","args":["--headless","--no
 UPDATED_JSON=$(jq --argjson mcp "$MCP_CONFIG" 'del(.mcpServers) | .mcpServers = $mcp | if .projects then .projects |= map_values(del(.mcpServers)) else . end' "$INSTANCE_JSON")
 echo "$UPDATED_JSON" > "$INSTANCE_JSON"
 
-# Map instance name to voice model name
-case "$INSTANCE_NAME" in
-  stan)     VOICE_NAME="joe" ;;
-  cabal)    VOICE_NAME="cabal" ;;
-  morag)    VOICE_NAME="morag" ;;
-  nathalie) VOICE_NAME="nathalie" ;;
-  *)        VOICE_NAME="amy" ;;
-esac
-
 # we got to build it's jail.
 OS_NAME=$(uname -s)
 DOCKER_PLATFORM_ARGS=()
-NIX_ARGS="./default.nix --arg uid $(id -u) --arg gid $(id -g) --argstr voiceName $VOICE_NAME"
+NIX_ARGS="./default.nix --arg uid $(id -u) --arg gid $(id -g)"
 
 if [ "$OS_NAME" != "Darwin" ]; then
     # on linux we can do this normally
@@ -144,11 +135,8 @@ docker run -it \
     -v "$(pwd)/instances/${INSTANCE_NAME}":/home/claude/.claude \
     -v "$(pwd)/settings.json":/home/claude/.claude/settings.json \
     "${CONFIG_MOUNTS[@]}" \
-    -v "/run/user/$(id -u)/pulse:/run/user/1000/pulse" \
-    -e PULSE_SERVER="unix:/run/user/1000/pulse/native" \
     -v "$(pwd)/../vibes/$INSTANCE_NAME":/home/claude/vibes \
     -v "$(pwd)/character":/home/claude/character \
-    -v "$(pwd)/hooks":/home/claude/.claude/hooks \
     --rm \
     claude-env:latest \
     claude
