@@ -53,6 +53,16 @@ NIX_ARGS=(./default.nix --arg uid "$(id -u)" --arg gid "$(id -g)")
 ENV_PATH=$(nix-build "${NIX_ARGS[@]}" -A env --no-out-link)
 ENTRYPOINT_PATH=$(nix-build "${NIX_ARGS[@]}" -A entrypoint --no-out-link)
 
+# systemd-nspawn writes a `.#machine.<hash>` lock file in the parent dir of
+# --directory= before booting. /nix/store is read-only, so we point it at a
+# per-launch copy under /tmp instead. The env is a tree of symlinks into
+# /nix/store, so `cp -a` is cheap and the copy still references the host store
+# at runtime. Cleanup on exit replaces what --ephemeral used to give us.
+RUNTIME_ROOT="/tmp/claude-rootfs.${INSTANCE_NAME}.$$"
+mkdir -p "$RUNTIME_ROOT"
+cp -a "$ENV_PATH/." "$RUNTIME_ROOT/"
+trap 'rm -rf "$RUNTIME_ROOT"' EXIT
+
 # Vanilla mode skips the project's CLAUDE.md and skills mounts.
 CONFIG_BINDS=()
 if [ "$VANILLA" -eq 0 ]; then
@@ -73,13 +83,12 @@ fi
 
 # --as-pid2 puts systemd-stub at PID 1 so zombies from chromium/playwright
 # get reaped instead of accumulating.
-# --ephemeral discards writable rootfs changes on exit, matching --rm.
 # --resolv-conf=bind-host shares the host's /etc/resolv.conf.
-exec sudo systemd-nspawn \
+# (No `exec sudo …` — we want the EXIT trap to run after nspawn returns.)
+sudo systemd-nspawn \
     --machine="$INSTANCE_NAME" \
     --hostname="$INSTANCE_NAME" \
-    --directory="$ENV_PATH" \
-    --ephemeral \
+    --directory="$RUNTIME_ROOT" \
     --as-pid2 \
     --resolv-conf=bind-host \
     --bind=/nix \
