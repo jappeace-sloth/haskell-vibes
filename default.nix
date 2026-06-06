@@ -72,6 +72,10 @@ let
 
   entrypoint = pkgs.writeScript "entrypoint" (builtins.readFile ./entrypoint.sh);
 
+  # Used by claude-nspawn.sh. Skips the docker-only bits: no nix-daemon to
+  # start (we share the host's via the /nix bind) and no SSH builder setup.
+  entrypointNspawn = pkgs.writeScript "entrypoint-nspawn" (builtins.readFile ./entrypoint-nspawn.sh);
+
   env = pkgs.buildEnv {
     name = "image-root";
     paths = [
@@ -112,6 +116,10 @@ let
 
     mkdir -p $out/home/claude $out/tmp $out/var/empty
     mkdir -p $out/etc/nix
+    # Pre-create bind-mount points so systemd-nspawn binds don't race.
+    mkdir -p $out/home/claude/.claude $out/home/claude/.ssh
+    mkdir -p $out/home/claude/vibes $out/home/claude/character
+    touch $out/home/claude/.claude.json
 
     # Write config files directly into the image filesystem rather than
     # as symlinks to nix store paths. Store symlinks created by writeTextDir
@@ -125,6 +133,14 @@ let
     group:     files
     shadow:    files
     NSSWITCH
+
+    # systemd-nspawn refuses to boot a rootfs without an os-release file.
+    # Harmless when the env is wrapped in a Docker image.
+    cat > $out/etc/os-release << 'OSRELEASE'
+    NAME="claude-env"
+    ID=claude-env
+    PRETTY_NAME="Claude Environment (Nix)"
+    OSRELEASE
 
     cat > $out/etc/group << 'GROUP'
     root:x:0:
@@ -149,7 +165,7 @@ let
 in
 
 {
-  inherit env;
+  inherit env entrypointNspawn;
   image =
 pkgs.dockerTools.buildImage {
   name = "claude-env";
