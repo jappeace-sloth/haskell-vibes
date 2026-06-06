@@ -1,4 +1,4 @@
-{ uid, gid, voiceName ? "amy" }:
+{ uid, gid }:
 let
   sources = import ./npins/default.nix;
   pkgs = import sources.nixpkgs { config.allowUnfree = true; };
@@ -16,93 +16,6 @@ let
     nixbld8:x:30008:30000:Nix build user 8:/var/empty:/sbin/nologin
     nixbld9:x:30009:30000:Nix build user 9:/var/empty:/sbin/nologin
     nixbld10:x:30010:30000:Nix build user 10:/var/empty:/sbin/nologin
-  '';
-
-  # Voice model definitions
-  piper-amy-voice = pkgs.fetchgit {
-    url = "https://huggingface.co/rhasspy/piper-voices";
-    rev = "834f23262168a7e809179465e4113f23f5a7d1f7";
-    hash = "sha256-MKBOTTPy3WXUcKa+0+U7HOT5Nm/LuWVqCi7lTMIpo0Y=";
-    fetchLFS = true;
-    sparseCheckout = [
-      "en/en_US/amy/medium/en_US-amy-medium.onnx"
-      "en/en_US/amy/medium/en_US-amy-medium.onnx.json"
-    ];
-  };
-
-  piper-joe-voice = pkgs.fetchgit {
-    url = "https://huggingface.co/rhasspy/piper-voices";
-    rev = "834f23262168a7e809179465e4113f23f5a7d1f7";
-    hash = "sha256-nhZrIjbVBl4vGnRdIh3AOgB38QAyGfdxav2qVxusu+k=";
-    fetchLFS = true;
-    sparseCheckout = [
-      "en/en_US/joe/medium/en_US-joe-medium.onnx"
-      "en/en_US/joe/medium/en_US-joe-medium.onnx.json"
-    ];
-  };
-
-  cabal-voice-src = pkgs.fetchFromGitHub {
-    owner = "jappeace-sloth";
-    repo = "cabal-voice";
-    rev = "c25a5dbd46d28becd5edddb53ec81d6688e2ffc1";
-    hash = "sha256-0U9uVssZ+qgOk7SeXBICS3EF08pBKJVP+puOXTZGHqc=";
-  };
-
-  piper-cabal-voice = pkgs.runCommand "piper-cabal-voice" {} ''
-    mkdir -p $out/en/en_US/cabal/medium
-    cp ${cabal-voice-src}/en_US-cabal-medium.onnx $out/en/en_US/cabal/medium/
-    cp ${cabal-voice-src}/en_US-cabal-medium.onnx.json $out/en/en_US/cabal/medium/
-  '';
-
-  morag-voice-src = pkgs.fetchFromGitHub {
-    owner = "jappeace-sloth";
-    repo = "scottish-tts";
-    rev = "75928690dfbea822be6d740a10a9a5c155c4f981";
-    hash = "sha256-tMyonoTIyqnSzoU9Z2av44dezwlyHzCeSaM68qn+yYc=";
-  };
-
-  piper-morag-voice = pkgs.runCommand "piper-morag-voice" {} ''
-    mkdir -p $out/en/en_US/morag/medium
-    cp ${morag-voice-src}/scottish-model.onnx $out/en/en_US/morag/medium/en_US-morag-medium.onnx
-    cp ${morag-voice-src}/scottish-model.onnx.json $out/en/en_US/morag/medium/en_US-morag-medium.onnx.json
-  '';
-
-  # Dutch (Belgian) female voice — nathalie, medium quality
-  piper-nathalie-voice-src = pkgs.fetchgit {
-    url = "https://huggingface.co/rhasspy/piper-voices";
-    rev = "834f23262168a7e809179465e4113f23f5a7d1f7";
-    hash = "sha256-qDOZncl1ImRr/TJBm9pfYy7aTZ/WvwBAqKEYa3pMIfQ=";
-    fetchLFS = true;
-    sparseCheckout = [
-      "nl/nl_BE/nathalie/medium/nl_BE-nathalie-medium.onnx"
-      "nl/nl_BE/nathalie/medium/nl_BE-nathalie-medium.onnx.json"
-    ];
-  };
-
-  # Remap nl_BE paths to en/en_US convention so piper wrapper + speak hook work unchanged
-  piper-nathalie-voice = pkgs.runCommand "piper-nathalie-voice" {} ''
-    mkdir -p $out/en/en_US/nathalie/medium
-    cp ${piper-nathalie-voice-src}/nl/nl_BE/nathalie/medium/nl_BE-nathalie-medium.onnx \
-       $out/en/en_US/nathalie/medium/en_US-nathalie-medium.onnx
-    cp ${piper-nathalie-voice-src}/nl/nl_BE/nathalie/medium/nl_BE-nathalie-medium.onnx.json \
-       $out/en/en_US/nathalie/medium/en_US-nathalie-medium.onnx.json
-  '';
-
-  # Map voice name to its derivation, defaulting to amy for unknown names
-  voiceDerivations = {
-    amy = piper-amy-voice;
-    joe = piper-joe-voice;
-    cabal = piper-cabal-voice;
-    morag = piper-morag-voice;
-    nathalie = piper-nathalie-voice;
-  };
-
-  selectedVoice = voiceDerivations.${voiceName} or piper-amy-voice;
-  resolvedVoiceName = if builtins.hasAttr voiceName voiceDerivations then voiceName else "amy";
-
-  piper = pkgs.writeShellScriptBin "piper" ''
-    MODEL="''${PIPER_MODEL:-${selectedVoice}/en/en_US/${resolvedVoiceName}/medium/en_US-${resolvedVoiceName}-medium.onnx}"
-    ${pkgs.piper-tts}/bin/piper -m "$MODEL" "$@"
   '';
 
   playwrightBrowsers = pkgs.playwright-driver.browsers.override {
@@ -179,8 +92,6 @@ let
       pkgs.which
       pkgs.claude-code
       pkgs.cowsay
-      piper
-      pkgs.sox
       pkgs.util-linux
       pkgs.jq
       pkgs.openssh
@@ -259,7 +170,6 @@ pkgs.dockerTools.buildImage {
       "PATH=/bin:/nix/var/nix/profiles/default/bin"
 
       "NIX_PATH=nixpkgs=${pkgs.path}" # fixes import <nixpkgs> errors
-      "PIPER_VOICES=${selectedVoice}/en/en_US"
     ];
     WorkingDir = "/home/claude";
   };

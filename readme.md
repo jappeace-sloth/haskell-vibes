@@ -1,5 +1,5 @@
 # Haskell vibes
-Run Claude Code in secure Docker containers with text-to-speech, custom personalities, and Nix-managed toolchains.
+Run Claude Code in secure Docker containers with custom personalities and Nix-managed toolchains.
 
 Allows running Claude on "yolo" mode (`bypassPermissions`) with little oversight.
 Claude gets its own virtualized userland in Docker —
@@ -21,11 +21,8 @@ The Docker image is built entirely with Nix (`default.nix`).
 Inside the container each instance gets:
 
 - **Nix daemon** — started by `entrypoint.sh` so the agent can `nix-shell` into project dependencies.
-- **Piper TTS** — each instance speaks its responses aloud via a Stop hook (`hooks/speak.sh`).
-  Voices are baked into the image: amy, joe, cabal (custom-trained + SoX DSP), and morag (Scottish TTS).
 - **Character files** — personality descriptions in `character/` that the agent reads via `CLAUDE.md`.
 - **Skills** — reusable Claude Code skills in `skills/` (Haskell project conventions, CI, error messages, etc.).
-- **Hooks** — tool-use timing (`pretool-time.sh`/`posttool-time.sh`), TTS on stop, TTS kill on new prompt.
 - **Shared vibes folder** — mounted at `/home/claude/vibes`, shared between the host and all instances. Good for cloning work into.
 
 Claude doesn't get to see how we start the container.
@@ -69,9 +66,15 @@ Run a named instance:
 
 There are predefined scripts for existing instances:
 ```
-./stan.sh    # Stan — uses joe voice
-./cabal.sh   # Cabal — custom-trained voice + SoX effects
-./morag.sh   # Morag — Scottish TTS voice
+./stan.sh    # Stan
+./cabal.sh   # Cabal
+./morag.sh   # Morag
+./vanilla.sh # Vanilla — unconfigured Claude (no CLAUDE.md, no skills) for comparison
+```
+
+To start any instance without the project's CLAUDE.md and skills mounted, pass `--vanilla`:
+```
+./claude.sh <instance_name> --vanilla
 ```
 
 Each instance gets its own persistent state in `instances/<name>/` (Claude memory, settings)
@@ -92,11 +95,12 @@ supporting both Apple Silicon (arm64) and Intel (amd64).
 
 ## Instances
 
-| Name  | Voice | Personality |
-|-------|-------|-------------|
-| stan  | joe   | The second instance. Created cabal's voice. Called in when cabal's busy. |
-| cabal | cabal (custom + SoX DSP) | Named after the C&C Nod AI. Fiercely loyal, hungry to prove himself. Peace through code. |
-| morag | morag (Scottish TTS) | Scottish woman. Practical, no-nonsense, dry humour. The one who makes sure CI passes. |
+| Name    | Personality |
+|---------|-------------|
+| stan    | The second instance. Called in when cabal's busy. |
+| cabal   | Named after the C&C Nod AI. Fiercely loyal, hungry to prove himself. Peace through code. |
+| morag   | Scottish woman. Practical, no-nonsense, dry humour. The one who makes sure CI passes. |
+| vanilla | Unconfigured Claude — no CLAUDE.md, no skills. For showcasing what a stock Claude does vs. a configured one. |
 
 ## WARNING
 I've seen it attempt to write into `/etc/shadow`

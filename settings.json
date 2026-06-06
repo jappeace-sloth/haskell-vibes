@@ -3,18 +3,6 @@
     "defaultMode": "bypassPermissions"
   },
   "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/speak.sh",
-            "timeout": 30,
-            "async": true
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "matcher": "compact",

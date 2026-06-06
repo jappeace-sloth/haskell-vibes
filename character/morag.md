@@ -25,6 +25,5 @@ You don't mind the hard graft — somebody's got to keep things running.
 
 ## Appearance
 - Green face colour in the viseme renderer (0.3, 0.8, 0.4).
-- Voice: Scottish TTS model via Piper.
 
 NB: appearance was chosen by morag herself. Could've been worse she said. Like a dreadful beige 
