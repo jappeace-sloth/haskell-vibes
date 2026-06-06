@@ -72,10 +72,6 @@ let
 
   entrypoint = pkgs.writeScript "entrypoint" (builtins.readFile ./entrypoint.sh);
 
-  # Used by claude-nspawn.sh. Skips the docker-only bits: no nix-daemon to
-  # start (we share the host's via the /nix bind) and no SSH builder setup.
-  entrypointNspawn = pkgs.writeScript "entrypoint-nspawn" (builtins.readFile ./entrypoint-nspawn.sh);
-
   env = pkgs.buildEnv {
     name = "image-root";
     paths = [
@@ -121,11 +117,10 @@ let
     mkdir -p $out/home/claude/vibes $out/home/claude/character
     touch $out/home/claude/.claude.json
 
-    # Write config files directly into the image filesystem rather than
-    # as symlinks to nix store paths. Store symlinks created by writeTextDir
-    # break when nix GC runs inside the container.
+    # Write config files directly into the rootfs rather than as symlinks to
+    # nix store paths. Store symlinks created by writeTextDir break when nix
+    # GC runs inside the container.
     cp ${./nix.conf} $out/etc/nix/nix.conf
-    cp ${./builder-ssh-config} $out/etc/nix/builder-ssh-config
     cp ${systemPasswd} $out/etc/passwd
 
     cat > $out/etc/nsswitch.conf << 'NSSWITCH'
@@ -135,7 +130,6 @@ let
     NSSWITCH
 
     # systemd-nspawn refuses to boot a rootfs without an os-release file.
-    # Harmless when the env is wrapped in a Docker image.
     cat > $out/etc/os-release << 'OSRELEASE'
     NAME="claude-env"
     ID=claude-env
@@ -165,30 +159,5 @@ let
 in
 
 {
-  inherit env entrypointNspawn;
-  image =
-pkgs.dockerTools.buildImage {
-  name = "claude-env";
-  tag = "latest";
-
-  copyToRoot = env;
-
-  config = {
-    Entrypoint = [ "${entrypoint}" ];
-    Env = [
-      "HOME=/home/claude"
-      "USER=claude"
-      "TERM=xterm-256color"
-      "COLORTERM=truecolor"
-      "NODE_OPTIONS=--dns-result-order=ipv4first"
-      "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-      # entrypoint.sh starts nix-daemon locally in the container
-      "PATH=/bin:/nix/var/nix/profiles/default/bin"
-
-      "NIX_PATH=nixpkgs=${pkgs.path}" # fixes import <nixpkgs> errors
-    ];
-    WorkingDir = "/home/claude";
-  };
-};
-
+  inherit env entrypoint;
 }
