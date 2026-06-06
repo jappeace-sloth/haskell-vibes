@@ -124,6 +124,10 @@ sudo systemd-nspawn \
     --setenv=TERM=xterm-256color \
     --setenv=COLORTERM=truecolor \
     --setenv=HOME=/home/claude \
+    --setenv=USER=claude \
+    --setenv=PATH=/bin:/nix/var/nix/profiles/default/bin \
+    --setenv=SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt \
+    --setenv=NODE_OPTIONS=--dns-result-order=ipv4first \
     --setenv=CLAUDE_UID="$(id -u)" \
     --setenv=CLAUDE_GID="$(id -g)" \
     --setenv=GH_TOKEN="$(cat ~/.gh_token)" \
