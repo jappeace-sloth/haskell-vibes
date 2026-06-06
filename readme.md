@@ -1,8 +1,8 @@
 # Haskell vibes
-Run Claude Code in secure Docker containers with custom personalities and Nix-managed toolchains.
+Run Claude Code in secure `systemd-nspawn` containers with custom personalities and Nix-managed toolchains.
 
 Allows running Claude on "yolo" mode (`bypassPermissions`) with little oversight.
-Claude gets its own virtualized userland in Docker —
+Claude gets its own virtualized userland —
 this works much better than checking every command it runs,
 because after a while that gets boring,
 and boring means you don't pay attention anyway.
@@ -17,10 +17,13 @@ Allowing you to bypass the need to make it smart or lazy.
 https://jappie.me/haskell-vibes.html
 
 ## Architecture
-The Docker image is built entirely with Nix (`default.nix`).
+The rootfs is built entirely with Nix (`default.nix`) and booted with
+`systemd-nspawn`. The host's `/nix` store is bind-mounted into the container,
+so launch is near-instant — there's no tarball/load step.
+
 Inside the container each instance gets:
 
-- **Nix daemon** — started by `entrypoint.sh` so the agent can `nix-shell` into project dependencies.
+- **Host nix-daemon via `/nix` bind** — the agent can `nix-shell` into project dependencies using the host's already-warm store.
 - **Character files** — personality descriptions in `character/` that the agent reads via `CLAUDE.md`.
 - **Skills** — reusable Claude Code skills in `skills/` (Haskell project conventions, CI, error messages, etc.).
 - **Shared vibes folder** — mounted at `/home/claude/vibes`, shared between the host and all instances. Good for cloning work into.
@@ -30,6 +33,13 @@ It could (probably unintentionally) use the knowledge of the runtime setup to es
 Having to find this public repo is just one more step.
 
 ## Prerequisites
+
+### Sudoers rule for `systemd-nspawn`
+`systemd-nspawn` has no supported rootless mode. Add a `NOPASSWD` rule scoped to
+just that binary so launches don't prompt:
+```
+YOUR_USER ALL=(root) NOPASSWD: /run/current-system/sw/bin/systemd-nspawn
+```
 
 ### GitHub bot account
 Create a separate GitHub bot account to give your LLM git access.
@@ -89,9 +99,8 @@ Clone repos there so all instances can access them.
 Skills in `skills/` teach the agent project conventions (Haskell style, CI, testing, etc.).
 Tell it to write new skills if it keeps making the same mistake.
 
-### macOS support
-`claude.sh` detects the OS and handles macOS builds by running `nix-build` inside a Linux Nix container,
-supporting both Apple Silicon (arm64) and Intel (amd64).
+### Platform support
+Linux only — `systemd-nspawn` is part of systemd and has no macOS equivalent.
 
 ## Instances
 

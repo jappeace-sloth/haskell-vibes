@@ -1,5 +1,0 @@
-Host host.docker.internal
-  User nix-builder
-  IdentityFile /root/.ssh/builder_key
-  StrictHostKeyChecking accept-new
-  UserKnownHostsFile /root/.ssh/known_hosts

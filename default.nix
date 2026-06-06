@@ -112,12 +112,15 @@ let
 
     mkdir -p $out/home/claude $out/tmp $out/var/empty
     mkdir -p $out/etc/nix
+    # Pre-create bind-mount points so systemd-nspawn binds don't race.
+    mkdir -p $out/home/claude/.claude $out/home/claude/.ssh
+    mkdir -p $out/home/claude/vibes $out/home/claude/character
+    touch $out/home/claude/.claude.json
 
-    # Write config files directly into the image filesystem rather than
-    # as symlinks to nix store paths. Store symlinks created by writeTextDir
-    # break when nix GC runs inside the container.
+    # Write config files directly into the rootfs rather than as symlinks to
+    # nix store paths. Store symlinks created by writeTextDir break when nix
+    # GC runs inside the container.
     cp ${./nix.conf} $out/etc/nix/nix.conf
-    cp ${./builder-ssh-config} $out/etc/nix/builder-ssh-config
     cp ${systemPasswd} $out/etc/passwd
 
     cat > $out/etc/nsswitch.conf << 'NSSWITCH'
@@ -125,6 +128,13 @@ let
     group:     files
     shadow:    files
     NSSWITCH
+
+    # systemd-nspawn refuses to boot a rootfs without an os-release file.
+    cat > $out/etc/os-release << 'OSRELEASE'
+    NAME="claude-env"
+    ID=claude-env
+    PRETTY_NAME="Claude Environment (Nix)"
+    OSRELEASE
 
     cat > $out/etc/group << 'GROUP'
     root:x:0:
@@ -149,30 +159,5 @@ let
 in
 
 {
-  inherit env;
-  image =
-pkgs.dockerTools.buildImage {
-  name = "claude-env";
-  tag = "latest";
-
-  copyToRoot = env;
-
-  config = {
-    Entrypoint = [ "${entrypoint}" ];
-    Env = [
-      "HOME=/home/claude"
-      "USER=claude"
-      "TERM=xterm-256color"
-      "COLORTERM=truecolor"
-      "NODE_OPTIONS=--dns-result-order=ipv4first"
-      "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-      # entrypoint.sh starts nix-daemon locally in the container
-      "PATH=/bin:/nix/var/nix/profiles/default/bin"
-
-      "NIX_PATH=nixpkgs=${pkgs.path}" # fixes import <nixpkgs> errors
-    ];
-    WorkingDir = "/home/claude";
-  };
-};
-
+  inherit env entrypoint;
 }
