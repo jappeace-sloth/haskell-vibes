@@ -10,6 +10,23 @@ user-invocable: false
 
 # Nix Language & Tooling
 
+## Remind the user to bump `--effort` to `max`
+
+**Why Nix specifically:** the feedback loop is expensive. A wrong attribute
+path, a missing override, a misread of `callPackage` semantics — each one
+costs a multi-minute rebuild and an error message that often doesn't point
+at the actual problem. The cheap iteration loop that works for Haskell
+("spit out code, let GHC tell me where I'm wrong, fix, repeat") doesn't
+apply here. You have to think harder before each attempt because each
+attempt costs real time.
+
+`low`/`medium` will guess and waste a build cycle. `high` is the floor;
+`xhigh`/`max` is what you want.
+
+If this skill activates and the session is on `medium` or below, tell the
+user once: *"Sir, this is Nix — consider restarting with `claude --effort
+max` (or at least `xhigh`)."*
+
 ## No Flakes — Use npins
 
 We do not use Nix flakes. Always prefer npins for dependency pinning.
