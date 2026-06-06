@@ -57,11 +57,31 @@ ENTRYPOINT_PATH=$(nix-build "${NIX_ARGS[@]}" -A entrypoint --no-out-link)
 # --directory= before booting. /nix/store is read-only, so we point it at a
 # per-launch copy under /tmp instead. The env is a tree of symlinks into
 # /nix/store, so `cp -a` is cheap and the copy still references the host store
-# at runtime. Cleanup on exit replaces what --ephemeral used to give us.
+# at runtime.
 RUNTIME_ROOT="/tmp/claude-rootfs.${INSTANCE_NAME}.$$"
 mkdir -p "$RUNTIME_ROOT"
 cp -a "$ENV_PATH/." "$RUNTIME_ROOT/"
-trap 'rm -rf "$RUNTIME_ROOT"' EXIT
+
+# /nix/store paths are mode 0555; cp -a preserves that, leaving the copy's
+# directories read-only — we couldn't unlink their entries during cleanup,
+# nor could the container land bind mounts inside them.
+chmod -R u+w "$RUNTIME_ROOT"
+
+# /home in the env is a symlink into a /nix/store path. Without replacing
+# it, the container's chown of /home/claude follows the symlink through the
+# --bind=/nix mount and modifies the host nix store. Recreate /home as a
+# fresh user-owned tree, with the bind-mount targets pre-made.
+rm -rf "$RUNTIME_ROOT/home"
+mkdir -p \
+    "$RUNTIME_ROOT/home/claude/.ssh" \
+    "$RUNTIME_ROOT/home/claude/.claude" \
+    "$RUNTIME_ROOT/home/claude/vibes" \
+    "$RUNTIME_ROOT/home/claude/character"
+touch "$RUNTIME_ROOT/home/claude/.claude.json"
+
+# Cleanup is best-effort. If nspawn left a mount-point dir or a root-owned
+# entry we can't reach, leave it — /tmp clears on reboot anyway.
+trap 'rm -rf "$RUNTIME_ROOT" 2>/dev/null || true' EXIT
 
 # Vanilla mode skips the project's CLAUDE.md and skills mounts.
 CONFIG_BINDS=()
