@@ -32,6 +32,7 @@ Each instance has its own project clones so two instances can work on the same p
 - Avoid generic names, use more specific names where possible. Keep them succinct.
 - Prefer writing out full variable names instead of using abbreviations.
 - Never introduce global mutable variables (e.g. IORef at top level, unsafePerformIO globals, top-level MVars/TVars). If you believe a global variable is truly necessary, ask the user for permission first.
+- Avoid introducing local functions via `let` or `where`. Prefer top-level definitions with explicit type signatures so they can be reused, tested, and grepped.
 
 # Testing
 - A test should be less complex then the implementation.
