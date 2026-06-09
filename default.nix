@@ -148,9 +148,14 @@ let
       email = sloth@jappie.me
     GITCONFIG
 
-    # Set ownership (chmod is done at runtime in entrypoint.sh because
-    # the Nix store resets all paths to 0555 after the build)
-    chown -R ${toString uid}:${toString gid} $out/home/claude
+    # Ownership of /home/claude is set at runtime in claude.sh after
+    # cp -a from the store path into $RUNTIME_ROOT: the copy already
+    # falls back to the caller's uid (cp -a preserves ownership only
+    # when running as root), so build-time chown is redundant.
+    #
+    # It was also broken under the default NixOS sandbox: builders run
+    # in a user namespace whose uid_map only contains the build user,
+    # so chown to any other uid returns EINVAL.
     chmod 1777 $out/tmp
   '')
     ];
