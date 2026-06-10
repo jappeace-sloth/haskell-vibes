@@ -71,6 +71,7 @@ let
   };
 
   entrypoint = pkgs.writeScript "entrypoint" (builtins.readFile ./entrypoint.sh);
+  dockerEntrypoint = pkgs.writeScript "docker-entrypoint" (builtins.readFile ./docker-entrypoint.sh);
 
   env = pkgs.buildEnv {
     name = "image-root";
@@ -121,6 +122,7 @@ let
     # nix store paths. Store symlinks created by writeTextDir break when nix
     # GC runs inside the container.
     cp ${./nix.conf} $out/etc/nix/nix.conf
+    cp ${./builder-ssh-config} $out/etc/nix/builder-ssh-config
     cp ${systemPasswd} $out/etc/passwd
 
     cat > $out/etc/nsswitch.conf << 'NSSWITCH'
@@ -165,4 +167,27 @@ in
 
 {
   inherit env entrypoint;
+
+  image = pkgs.dockerTools.buildImage {
+    name = "claude-env";
+    tag = "latest";
+
+    copyToRoot = env;
+
+    config = {
+      Entrypoint = [ "${dockerEntrypoint}" ];
+      Env = [
+        "HOME=/home/claude"
+        "USER=claude"
+        "TERM=xterm-256color"
+        "COLORTERM=truecolor"
+        "NODE_OPTIONS=--dns-result-order=ipv4first"
+        "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+        # docker-entrypoint.sh starts nix-daemon locally in the container
+        "PATH=/bin:/nix/var/nix/profiles/default/bin"
+        "NIX_PATH=nixpkgs=${pkgs.path}"
+      ];
+      WorkingDir = "/home/claude";
+    };
+  };
 }
