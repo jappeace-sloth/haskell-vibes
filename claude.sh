@@ -227,12 +227,10 @@ launch_nspawn() {
 }
 
 # ---------------------------------------------------------------------------
-# Dispatch based on OS
+# Dispatch: prefer nspawn if available, fall back to Docker
 # ---------------------------------------------------------------------------
-OS_NAME=$(uname -s)
-
-if [ "$OS_NAME" = "Darwin" ]; then
-    launch_docker
-else
+if command -v systemd-nspawn >/dev/null 2>&1; then
     launch_nspawn
+else
+    launch_docker
 fi
