@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # PostToolUse hook for Write/Edit.
 #
 # After a file write, ask claude-haiku to review the file against every rule
