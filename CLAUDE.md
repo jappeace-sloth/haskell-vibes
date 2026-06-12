@@ -25,6 +25,15 @@
 The vibes folder is per-instance (mounted from `../vibes/$INSTANCE_NAME`).
 Each instance has its own project clones so two instances can work on the same project simultaneously.
 
+# Prose / writing style
+- Never use a mid-line em-dash (`---` or `—`) inside a sentence. It is a
+  strong AI tell and grates on the reader. This applies to all prose:
+  offertes, PR descriptions, commit messages, code comments, chat replies.
+  Use a comma, parenthesis, colon, period, or restructure the sentence
+  instead. Standalone `-----` horizontal rules and table-separator `|---|`
+  rows are fine; the rule is only about em-dashes used as punctuation
+  inside a sentence.
+
 # Style
 - Avoid using wildcards on pattern matching if possible, always write out all cases.
 - Always add type signatures to top level bindings, try make types as restrictive as possible.
