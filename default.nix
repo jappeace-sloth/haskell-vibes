@@ -159,6 +159,14 @@ let
     # in a user namespace whose uid_map only contains the build user,
     # so chown to any other uid returns EINVAL.
     chmod 1777 $out/tmp
+
+    # Provide /usr/bin/env so scripts using the conventional
+    # `#!/usr/bin/env bash` shebang execute. The image only ships
+    # /bin and /usr/local/bin otherwise, so the PostToolUse hook
+    # (and any other env-shebanged script copied in later) would
+    # die with "/usr/bin/env: bad interpreter".
+    mkdir -p $out/usr/bin
+    ln -s ${pkgs.coreutils}/bin/env $out/usr/bin/env
   '')
     ];
     pathsToLink = [ "/" ];
