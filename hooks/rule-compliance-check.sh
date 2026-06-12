@@ -92,11 +92,16 @@ trap 'rm -f "$rules_file" "$prompt_file"' EXIT
 
 {
     cat <<'PROMPT_HEADER'
-You are a strict rule-compliance reviewer for a file that was just written or
-edited by another Claude Code agent. Below is a corpus of rules from
-CLAUDE.md and installed skills, followed by the current content of the file.
+You are a rule-compliance reviewer for a file that was just written or edited
+by another Claude Code agent (a larger model than you). Your output will be
+fed back to that larger model as feedback. It will then decide whether to fix
+the file or push back on your finding. So: give it enough evidence to judge,
+not just a label.
 
-List EVERY clear violation of a rule that appears in the file. Be strict:
+Below is a corpus of rules from CLAUDE.md and installed skills, followed by
+the current content of the file.
+
+Be strict about what counts as a violation:
 
 - Only flag clear, objective violations of a rule that is stated in the
   rules corpus. Quote the rule you are applying.
@@ -107,13 +112,23 @@ List EVERY clear violation of a rule that appears in the file. Be strict:
   being reviewed. Do not flag a Haskell file for violating a Reddit-posting
   skill's rules, etc.
 
-Respond in this exact format:
+Response format:
 
-- If there are no violations, respond with the single line: OK
-- Otherwise, respond with one line per violation, each starting with the
-  literal token "VIOLATION: " followed by a short description and the rule
-  being broken in parentheses. Example:
-    VIOLATION: mid-line em-dash on line 42 (Prose style rule: no `---` inside a sentence)
+- If there are no violations: respond with the single line `OK`.
+- Otherwise: one block per violation. Each block has these labelled lines,
+  exactly as shown, no markdown:
+
+    VIOLATION: <one-sentence summary>
+    RULE: "<verbatim quote of the rule from the rules corpus, including
+            which file/skill it came from>"
+    EVIDENCE: line <N>: <the offending text from the file, copied verbatim>
+    REASONING: <one or two sentences explaining why this text breaks that
+                rule. Be concrete -- name the mechanism, not just "violates
+                style". Include any borderline-ness you're aware of so the
+                larger model can decide whether to fix or push back.>
+
+Separate blocks with a blank line. Be honest about uncertainty in REASONING
+-- the larger model is your editor, not your audience to impress.
 
 === RULES ===
 PROMPT_HEADER
@@ -134,9 +149,18 @@ fi
 
 if printf '%s' "$review_output" | grep -q '^VIOLATION:'; then
     {
-        printf 'Rule violations detected in %s:\n' "$file_path"
-        printf '%s\n' "$review_output" | grep '^VIOLATION:'
-        printf '\nFix these before continuing. Set CLAUDE_SKIP_RULE_CHECK=1 to disable this check for the session.\n'
+        printf 'A claude-haiku-4-5 reviewer flagged possible rule violations in %s.\n' "$file_path"
+        printf 'You are the larger model and are the final judge -- evaluate each\n'
+        printf 'finding on its merits using the RULE quote, EVIDENCE, and REASONING\n'
+        printf 'provided. For each finding, do one of:\n'
+        printf '  1. Agree: edit the file to fix it.\n'
+        printf '  2. Disagree: explain in your reply to the user why the finding is\n'
+        printf '     wrong (haiku misread the rule, the rule does not apply to this\n'
+        printf '     file type, the evidence is taken out of context, etc.), and\n'
+        printf '     proceed without fixing.\n'
+        printf 'Do not silently ignore findings -- either fix or rebut.\n\n'
+        printf '--- reviewer findings ---\n%s\n--- end reviewer findings ---\n\n' "$review_output"
+        printf 'Set CLAUDE_SKIP_RULE_CHECK=1 to disable this check for the session.\n'
     } >&2
     exit 2
 fi
