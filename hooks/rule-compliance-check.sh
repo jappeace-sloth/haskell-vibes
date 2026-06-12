@@ -42,7 +42,16 @@ if [ "$file_size" -gt 50000 ]; then
 fi
 
 # Skip binary files (cheap heuristic: look for NUL bytes in first 8KB).
-if head -c 8192 "$file_path" 2>/dev/null | grep -q $'\x00'; then
+# Decision: use `grep -aqP '\x00'` rather than `grep -q $'\x00'`. Bash
+# strings cannot contain NUL bytes, so `$'\x00'` silently expands to the
+# empty string, leaving `grep -q ''` which matches every non-empty file,
+# so the original check skipped haiku review on every text file too.
+# Alternatives considered: `file --mime` (extra fork, less predictable
+# output across distros); raw `od`/`tr` pipelines (heavier, harder to
+# read). `-P` lets grep parse the escape itself; `-a` forces text-mode
+# on data grep may heuristically guess is binary; `LC_ALL=C` keeps the
+# byte regex stable across locales.
+if head -c 8192 "$file_path" 2>/dev/null | LC_ALL=C grep -aqP '\x00'; then
     exit 0
 fi
 
