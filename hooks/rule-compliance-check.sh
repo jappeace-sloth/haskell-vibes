@@ -168,7 +168,10 @@ if printf '%s' "$review_output" | grep -q '^VIOLATION:'; then
         printf '     file type, the evidence is taken out of context, etc.), and\n'
         printf '     proceed without fixing.\n'
         printf 'Do not silently ignore findings -- either fix or rebut.\n\n'
-        printf '--- reviewer findings ---\n%s\n--- end reviewer findings ---\n\n' "$review_output"
+        # The `--` guard stops printf from treating the leading `---` of the
+        # format string as a malformed option flag, which silently swallowed
+        # the entire findings block on bash's builtin printf.
+        printf -- '--- reviewer findings ---\n%s\n--- end reviewer findings ---\n\n' "$review_output"
         printf 'Set CLAUDE_SKIP_RULE_CHECK=1 to disable this check for the session.\n'
     } >&2
     exit 2
