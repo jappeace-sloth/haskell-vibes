@@ -13,6 +13,17 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/claude/.claude/hooks/rule-compliance-check.sh"
+          }
+        ]
+      }
     ]
   },
   "skipDangerousModePermissionPrompt": true,
