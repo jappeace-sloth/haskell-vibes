@@ -57,10 +57,15 @@ tool_names=$(jq -rs '
   | .[]
 ' "$transcript_path" 2>/dev/null)
 
+# MCP tool names all begin with `mcp__<server>__<tool>` and cover
+# playwright (browser actions), tmux (terminal ops), hoogle (research),
+# google drive (auth), etc. They are either side-effecting or
+# research-style, both of which warrant the same "report what you
+# observed" nudge, so any mcp__ tool fires the hook.
 touched_state=0
 while IFS= read -r name; do
     case "$name" in
-        Write|Edit|MultiEdit|NotebookEdit|Bash|WebFetch|WebSearch)
+        Write|Edit|MultiEdit|NotebookEdit|Bash|WebFetch|WebSearch|mcp__*)
             touched_state=1
             break ;;
     esac
