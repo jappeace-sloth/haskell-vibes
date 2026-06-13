@@ -5,7 +5,8 @@
 #
 #   Phase A (rule review). Claims the edits.jsonl review stack that
 #   record-edit.sh built during the turn and reviews every diff in a SINGLE
-#   claude-haiku call against the rules corpus. If haiku reports violations,
+#   reviewer call (see reviewer_model) against the rules corpus. If the
+#   reviewer reports violations,
 #   the stop is blocked (decision:block) with the findings so the larger
 #   model can fix or rebut. The model's fixes are themselves edits, recorded
 #   onto a fresh stack and re-reviewed on the next Stop, so review loops
@@ -35,6 +36,14 @@ mkdir -p "$state_dir"
 verify_done_flag="$state_dir/verify-done"
 edits_stack="$state_dir/edits.jsonl"
 claimed_edits="$state_dir/edits.processing"
+
+# Model used for Phase A rule review. Sonnet rather than Haiku: the review
+# only fires on turns that actually edited files and batches that turn's
+# diffs into one call, so the cost is per-edit-turn (not per-Stop), and the
+# extra reasoning catches semantic rule violations (e.g. silent failures,
+# tests that assert static content) that a smaller model misses. The larger
+# main-loop model is still the final judge of every finding.
+reviewer_model="claude-sonnet-4-6"
 
 # --- corpus selection -------------------------------------------------------
 
@@ -101,7 +110,7 @@ build_corpus() {
 # render_diffs EDITS_FILE
 # Renders each recorded edit as a labelled diff block on stdout. Reviewing
 # the diff (what changed) rather than the whole file keeps the prompt small
-# and focuses haiku on the new text.
+# and focuses the reviewer on the new text.
 render_diffs() {
     jq -rs '
       .[] |
@@ -187,7 +196,7 @@ PROMPT_HEADER
         } > "$prompt_file"
 
         # The 60s timeout protects against a hung subprocess blocking the turn.
-        review_output=$(timeout 60 claude -p --model claude-haiku-4-5-20251001 < "$prompt_file" 2>/dev/null || true)
+        review_output=$(timeout 60 claude -p --model "$reviewer_model" < "$prompt_file" 2>/dev/null || true)
 
         rm -f "$claimed_edits"
 
@@ -198,11 +207,11 @@ PROMPT_HEADER
             # New fixes are coming, so re-arm verification to run after them.
             rm -f "$verify_done_flag"
 
-            reason="A claude-haiku-4-5 reviewer flagged possible rule violations in the diffs you just applied.
+            reason="A $reviewer_model reviewer flagged possible rule violations in the diffs you just applied.
 You are the larger model and the final judge. For each finding, either:
   1. Agree: edit the file to fix it (the fix is re-reviewed automatically), or
-  2. Disagree: explain to the user why the finding is wrong (haiku misread the
-     rule, the rule does not apply to this file type, evidence out of context)
+  2. Disagree: explain to the user why the finding is wrong (the reviewer misread
+     the rule, the rule does not apply to this file type, evidence out of context)
      and proceed without fixing.
 Do not silently ignore findings. Set CLAUDE_SKIP_RULE_CHECK=1 to disable.
 
