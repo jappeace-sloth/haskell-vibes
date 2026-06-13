@@ -273,6 +273,10 @@ jq -n '{
   decision: "block",
   reason: ("Before ending this turn, verify your work through external observation, not introspection. "
     + "You have tools. Use them. Saying \"it should work\" is not verification; demonstrating \"I ran X and observed Y\" is. "
-    + "If you have already done this and reported it, end the turn. "
-    + "Otherwise verify now and report what you observed.")
+    + "Prefer the most authoritative evidence you can obtain. Evidence is not equal: "
+    + "a compiler or type-checker error, a failing test, a non-zero exit code, or a process the machine actually executed are extremely trustworthy, because the tool cannot misreport them. "
+    + "A document, comment, README or status note on disk is weak evidence: it states what someone intended, not what is true now, and much of it was written by an AI (jappeace-sloth) so it may be confidently wrong. "
+    + "If a more authoritative tool can settle the question, use it rather than citing a weaker source: run the type-checker, run the test, run the command and read its exit code, instead of quoting prose that claims the work is done. "
+    + "If you have already verified this way and reported it, end the turn. "
+    + "Otherwise verify now and report what you observed and how authoritative that observation is.")
 }'
