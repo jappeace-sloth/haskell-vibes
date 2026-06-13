@@ -15,8 +15,11 @@ if [ "${CLAUDE_SKIP_RULE_CHECK:-0}" = "1" ]; then
 fi
 
 # Hook input arrives as JSON on stdin.
+# Write/Edit/MultiEdit carry the target as .tool_input.file_path; NotebookEdit
+# uses .tool_input.notebook_path instead, so fall back to it or the hook
+# extracts an empty path and silently skips review on notebooks (issue #53).
 hook_input=$(cat)
-file_path=$(printf '%s' "$hook_input" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
+file_path=$(printf '%s' "$hook_input" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null)
 
 # No file path means nothing to check.
 if [ -z "$file_path" ] || [ ! -f "$file_path" ]; then
