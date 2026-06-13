@@ -42,6 +42,7 @@ Each instance has its own project clones so two instances can work on the same p
 - Prefer writing out full variable names instead of using abbreviations.
 - Never introduce global mutable variables (e.g. IORef at top level, unsafePerformIO globals, top-level MVars/TVars). If you believe a global variable is truly necessary, ask the user for permission first.
 - Avoid introducing local functions via `let` or `where`. Prefer top-level definitions with explicit type signatures so they can be reused, tested, and grepped.
+- Never allow silent failure. A failure that is swallowed (a default returned in place of an error, a `Nothing`/`Left` dropped, an empty list where a value was required, a caught-and-ignored exception) hides bugs until they surface somewhere far away. Two acceptable responses to a failure: (1) make it impossible in the type system, so the illegal state cannot be represented and the compiler rejects it, or (2) crash loudly with a descriptive message (`error`, `throwIO`) so it is seen immediately. Prefer (1). A benign-looking fallback that masks a real error is the worst option.
 
 # Testing
 - A test should be less complex then the implementation.
