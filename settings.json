@@ -14,13 +14,24 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/claude/.claude/hooks/reset-turn-state.sh"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit|MultiEdit|NotebookEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "/home/claude/.claude/hooks/rule-compliance-check.sh"
+            "command": "/home/claude/.claude/hooks/record-edit.sh"
           }
         ]
       }
@@ -31,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/claude/.claude/hooks/verify-observation-check.sh"
+            "command": "/home/claude/.claude/hooks/stop-gate.sh"
           }
         ]
       }
