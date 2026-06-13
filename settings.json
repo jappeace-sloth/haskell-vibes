@@ -24,6 +24,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/claude/.claude/hooks/verify-observation-check.sh"
+          }
+        ]
+      }
     ]
   },
   "skipDangerousModePermissionPrompt": true,
