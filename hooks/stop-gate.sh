@@ -72,6 +72,16 @@ claimed_edits="$state_dir/edits.processing"
 # main-loop model is still the final judge of every finding.
 reviewer_model="claude-sonnet-4-6"
 
+# Args for the two read-only reviewers (Phase 0 canary, Phase A rule review).
+# Neither uses MCP, so we skip the MCP server health-check spawns
+# (hoogle/playwright/tmux registered in ~/.claude.json) that otherwise cost
+# ~2.6s of cold start per call, and restrict them to read-only built-in tools.
+# The JSON has no spaces, so word-splitting on the unquoted expansion yields
+# exactly the three intended tokens. The Phase 1 critic is deliberately NOT
+# given these: it needs full MCP and tool access to gather counter-evidence.
+nomcp_args='--strict-mcp-config --mcp-config {"mcpServers":{}}'
+readonly_tools='--tools Read Grep Glob'
+
 # --- corpus selection -------------------------------------------------------
 
 # select_skills FILE_LIST_FILE
@@ -289,10 +299,10 @@ DUMBIFY_HEADER
             if [ -n "$dumbify_repo" ]; then
                 dumbify_output=$(cd "$dumbify_repo" \
                     && CLAUDE_SKIP_DUMBIFY=1 CLAUDE_SKIP_CRITIQUE=1 CLAUDE_SKIP_RULE_CHECK=1 \
-                       timeout "$dumbify_timeout" claude -p --model "$dumbify_model" < "$dumbify_prompt" 2>/dev/null || true)
+                       timeout "$dumbify_timeout" claude -p $nomcp_args $readonly_tools --model "$dumbify_model" < "$dumbify_prompt" 2>/dev/null || true)
             else
                 dumbify_output=$(CLAUDE_SKIP_DUMBIFY=1 CLAUDE_SKIP_CRITIQUE=1 CLAUDE_SKIP_RULE_CHECK=1 \
-                    timeout "$dumbify_timeout" claude -p --model "$dumbify_model" < "$dumbify_prompt" 2>/dev/null || true)
+                    timeout "$dumbify_timeout" claude -p $nomcp_args $readonly_tools --model "$dumbify_model" < "$dumbify_prompt" 2>/dev/null || true)
             fi
 
             rm -f "$dumbify_prompt"
@@ -530,6 +540,13 @@ Be strict about what counts as a violation:
 - Only flag text that appears in a "--- with ---", "--- new content ---" or
   "--- new source ---" section: that is what the agent actually wrote. Do not
   flag text in a "--- replaced ---" section; that is the old text being removed.
+- A violation can also be the ABSENCE of required text. For rules of the form
+  "always do X" / "every Y must have Z" (e.g. "always add a top-level type
+  signature to every top-level binding"), a diff fragment cannot show a missing
+  line. So for any top-level definition that appears in the diffs (added or
+  modified this turn), consult the FULL FILE CONTENTS section below to check
+  whether the required element is present; if it is missing, flag it. Apply this
+  ONLY to definitions that appear in the diffs, never to untouched code.
 - Do NOT flag stylistic preferences that are not stated in the rules.
 - Do NOT flag judgement calls or things that "might be better".
 - If you are unsure, do not flag it.
@@ -556,12 +573,23 @@ PROMPT_HEADER
             cat "$corpus"
             printf '\n=== DIFFS JUST APPLIED ===\n'
             render_diffs "$claimed_edits" | head -c 40000
+            # Full current contents of each touched file, so the reviewer can
+            # judge the ABSENCE of required elements (e.g. a missing top-level
+            # type signature) that a diff fragment alone cannot reveal.
+            printf '\n=== FULL FILE CONTENTS (context; judge presence/absence of required elements only for definitions that appear in the diffs above) ===\n'
+            while IFS= read -r context_path; do
+                [ -z "$context_path" ] && continue
+                [ -f "$context_path" ] || continue
+                printf '\n--- %s ---\n' "$context_path"
+                head -c 40000 "$context_path"
+                printf '\n'
+            done < "$file_list"
         } > "$prompt_file"
 
         # The 60s timeout protects against a hung subprocess blocking the turn.
         # Skip envs so the nested reviewer never re-triggers this hook on itself.
         review_output=$(CLAUDE_SKIP_DUMBIFY=1 CLAUDE_SKIP_CRITIQUE=1 CLAUDE_SKIP_RULE_CHECK=1 \
-            timeout 60 claude -p --model "$reviewer_model" < "$prompt_file" 2>/dev/null || true)
+            timeout 60 claude -p $nomcp_args $readonly_tools --model "$reviewer_model" < "$prompt_file" 2>/dev/null || true)
 
         rm -f "$claimed_edits"
 
