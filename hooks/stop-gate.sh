@@ -443,6 +443,10 @@ fi
 critique_done_flag="$state_dir/critique-done"
 critique_round_file="$state_dir/critique-round"
 critique_prev="$state_dir/critique-prev"
+# Cross-Stop state lifecycle: $state_dir lives on tmpfs and persists across all
+# the Stop invocations of ONE turn, and is wiped per user prompt by
+# reset-turn-state.sh. That is what lets the editmark written when a challenge
+# blocks (see below) be read again on the next Stop to detect a shrug.
 critique_editmark="$state_dir/critique-editmark"
 
 critique_model="${CLAUDE_CRITIQUE_MODEL:-claude-opus-4-8}"
