@@ -42,7 +42,7 @@ input=\$(cat)
 echo "SKIP_CRITIQUE=\${CLAUDE_SKIP_CRITIQUE:-unset} SKIP_DUMBIFY=\${CLAUDE_SKIP_DUMBIFY:-unset}" >> "$stub_log"
 if printf '%s' "\$input" | grep -q 'complexity canary'; then
     cat "$dumbify_response"
-elif printf '%s' "\$input" | grep -q 'adversarial code critic'; then
+elif printf '%s' "\$input" | grep -q 'adversarial correctness critic'; then
     cat "$critic_response"
 elif printf '%s' "\$input" | grep -q 'rule-compliance reviewer'; then
     echo OK
@@ -75,6 +75,12 @@ seed_edit() {
 run_gate() {
     # run_gate SESSION  -> stdout of the gate for a Stop with empty transcript.
     printf '{"session_id":"%s","transcript_path":""}' "$1" | bash "$gate"
+}
+
+run_gate_tx() {
+    # run_gate_tx SESSION TRANSCRIPT  -> stdout of the gate with a real
+    # transcript path, used to exercise the prose/claims critique path.
+    printf '{"session_id":"%s","transcript_path":"%s"}' "$1" "$2" | bash "$gate"
 }
 
 challenge_block=$'CHALLENGE: off-by-one in the loop bound\nCLAIM: drops the last element\nEVIDENCE: ran `runghc /tmp/r.hs`, printed 4 items expected 5\nSEVERITY: major'
@@ -196,6 +202,43 @@ assert_absent 'critic challenges' "$out" "c4: skip flag suppresses the critique 
 assert_no_file "$sdir/critique-done" "c4: skipped phase leaves no done flag"
 
 unset CLAUDE_SKIP_DUMBIFY
+
+############################################################################
+# Phase 1 as full correctness guard: prose/claims on no-edit turns, and the
+# removal of the old self-verification nudge.
+############################################################################
+
+# === pr1: a research turn (tools, no file edits) is still critiqued =========
+tx="$work/tx-pr1.jsonl"
+{
+  printf '%s\n' '{"type":"user","message":{"content":"research X"}}'
+  printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"I claim X is true."},{"type":"tool_use","name":"WebSearch","input":{}}]}}'
+} > "$tx"
+printf '%s' "$challenge_block" > "$critic_response"
+out=$(run_gate_tx pr1 "$tx")
+assert_contains 'critic challenges' "$out" "pr1: critique fires on a research turn with no file edits"
+
+# === pr2: a pure conversational turn (no tools, no edits) is not critiqued ===
+tx="$work/tx-pr2.jsonl"
+{
+  printf '%s\n' '{"type":"user","message":{"content":"what is 2+2"}}'
+  printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"4"}]}}'
+} > "$tx"
+out=$(run_gate_tx pr2 "$tx")
+sdir=$(state_dir_for pr2)
+assert_absent '"decision": "block"' "$out" "pr2: a pure conversational turn does not block"
+assert_file "$sdir/critique-done" "pr2: critique marked done when there is nothing to refute"
+
+# === pr3: the old self-verification nudge is gone ==========================
+tx="$work/tx-pr3.jsonl"
+{
+  printf '%s\n' '{"type":"user","message":{"content":"run it"}}'
+  printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"I ran it, works."},{"type":"tool_use","name":"Bash","input":{}}]}}'
+} > "$tx"
+echo OK > "$critic_response"
+out=$(run_gate_tx pr3 "$tx")
+assert_absent 'verify your work' "$out" "pr3: the removed verification nudge no longer fires"
+assert_absent '"decision": "block"' "$out" "pr3: a clean critique on a tool turn ends the turn"
 
 echo
 if [ "$fails" -eq 0 ]; then
