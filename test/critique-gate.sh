@@ -36,6 +36,7 @@ critic_response="$work/critic-response.txt"
 dumbify_response="$work/dumbify-response.txt"
 reviewer_response="$work/reviewer-response.txt"
 reviewer_prompt_log="$work/reviewer-prompt.txt"
+dumbify_prompt_log="$work/dumbify-prompt.txt"
 stub_log="$work/stub-invocations.log"
 # When this file holds a phase keyword (dumbify|critique|review), the stub
 # simulates a broken nested call for that phase: it writes to stderr and exits
@@ -52,6 +53,7 @@ input=\$(cat)
 echo "SKIP_CRITIQUE=\${CLAUDE_SKIP_CRITIQUE:-unset} SKIP_DUMBIFY=\${CLAUDE_SKIP_DUMBIFY:-unset}" >> "$stub_log"
 fail_phase=\$(cat "$stub_fail_file" 2>/dev/null)
 if printf '%s' "\$input" | grep -q 'complexity canary'; then
+    printf '%s' "\$input" > "$dumbify_prompt_log"
     if [ "\$fail_phase" = "dumbify" ]; then echo "stub: simulated dumbify failure" >&2; exit 1; fi
     cat "$dumbify_response"
 elif printf '%s' "\$input" | grep -q 'adversarial correctness critic'; then
@@ -152,10 +154,23 @@ assert_eq "$(cat "$sdir/dumbify-editmark" 2>/dev/null)" "2" "d3: editmark update
 seed_edit d4 hs 2
 sdir=$(state_dir_for d4)
 printf '1' > "$sdir/dumbify-editmark"
-printf '3' > "$sdir/dumbify-round"      # next would be 4, past the default cap of 3
+printf '2' > "$sdir/dumbify-round"      # next would be 3, past the default cap of 2
 out=$(run_gate d4)
 assert_absent 'canary explanation' "$out" "d4: past the round cap the canary stops"
 assert_file "$sdir/dumbify-done" "d4: dumbify marked done at the cap"
+
+# === d7: the canary prompt carries full-file context, not just the diff =====
+# Regression guard for the full-file fix: the canary must receive the whole
+# touched file, so a reference to code defined elsewhere in it is not a false
+# "I can't see X" confusion.
+printf 'bump xs = map (+1) xs  -- DUMBIFY_FULLFILE_MARKER\n' > "$work/subject.hs"
+: > "$dumbify_prompt_log"
+seed_edit d7 hs 1
+out=$(run_gate d7)
+assert_contains 'canary explanation' "$out" "d7: a code change still triggers the canary"
+assert_contains 'FULL CURRENT CONTENTS' "$(cat "$dumbify_prompt_log")" "d7: canary prompt carries the full-file section"
+assert_contains 'DUMBIFY_FULLFILE_MARKER' "$(cat "$dumbify_prompt_log")" "d7: canary prompt carries the touched file body"
+rm -f "$work/subject.hs"
 
 # === d5: non-code edit -> dumbify does not fire ============================
 seed_edit d5 md 1
