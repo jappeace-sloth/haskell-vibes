@@ -6,12 +6,18 @@
 #   Phase 0 (dumbify / complexity canary). First, for code-touching turns only,
 #   a small model (Haiku) reads the code changed this turn with no help and
 #   explains it; the larger main-loop model judges whether that explanation is
-#   correct. If Haiku misread or hedged, the code is too complex, so the large
-#   model simplifies it (behaviour-preserving) and Haiku re-explains. Convergence
-#   is observed via the edit stack: no new edits after an explanation means the
-#   large model accepted it. Runs before critique so the cheap canary shapes the
-#   code first and the expensive critic verifies the simplified result. Bounded
-#   by CLAUDE_DUMBIFY_MAX_ROUNDS. Mirrors the dumbify-my-code skill.
+#   correct. The canary is shown the diffs AND the full current contents of each
+#   touched file, so "I can't see where X is defined" stops being a false
+#   confusion and it can focus on whether the changed code itself is followable
+#   (the same full-file-context fix the rule review got). If Haiku could not work
+#   out what the code DOES (a misread or hedging about behaviour), the code is too
+#   complex, so the large model simplifies it (behaviour-preserving) and Haiku
+#   re-explains; a mere request for more comments when it understood is advisory.
+#   Convergence is observed via the edit stack: no new edits after an explanation
+#   means the large model accepted it. Runs before critique so the cheap canary
+#   shapes the code first and the expensive critic verifies the simplified result.
+#   Bounded by CLAUDE_DUMBIFY_MAX_ROUNDS (default 2: one full-context read, plus
+#   one re-read if simplified). Mirrors the dumbify-my-code skill.
 #
 #   Phase 1 (adversarial critique). The full correctness guard, and the
 #   replacement for the old self-verification nudge. A fresh independent critic
@@ -24,8 +30,11 @@
 #   turn so the larger model fixes the code, corrects the claim, or out-evidences
 #   the critic. Running after dumbify makes the critic the last correctness gate,
 #   so it verifies the canary's refactor too; its own fixes land on the
-#   edits.jsonl stack and get rule-checked by Phase A. Bounded by
-#   CLAUDE_CRITIQUE_MAX_ROUNDS so the debate cannot loop forever.
+#   edits.jsonl stack and get rule-checked by Phase A. The critic is an advisor,
+#   not a wall: it surfaces its challenges once, and the worker can always shrug
+#   them off. Like dumbify, it converges on the edit stack (no new edits since the
+#   last challenge means the worker stood by its work, so the gate moves on); only
+#   a real fix re-triggers it, with CLAUDE_CRITIQUE_MAX_ROUNDS as a backstop.
 #
 #   Both Phase 0 and Phase 1 run a nested `claude` that may run commands, so each
 #   is launched with every gate phase disabled in its environment to stop it
@@ -301,13 +310,23 @@ turn_assistant_text() {
 # the code was simplified, so Haiku re-explains. Bounded by
 # CLAUDE_DUMBIFY_MAX_ROUNDS. Fires only for code: docs/config carry no functions
 # to canary.
+#
+# Decision: the canary reads with FULL-FILE context, and the round cap defaults
+# to 2 (was 3). On isolated diffs, once the local logic was clear the only thing
+# left for the canary to "not understand" was code outside the window (a helper
+# defined elsewhere, the surrounding phase, the hook protocol), so later rounds
+# drifted from "is this complex?" to "what else is in this file?" and pressured
+# the author into comment-bloat rather than real simplification. Giving it the
+# whole file removes those false confusions, and two rounds (one read, plus one
+# re-read if the author actually simplified) is enough; a third mostly invites a
+# manufactured nit. Override with CLAUDE_DUMBIFY_MAX_ROUNDS if needed.
 
 dumbify_done_flag="$state_dir/dumbify-done"
 dumbify_round_file="$state_dir/dumbify-round"
 dumbify_editmark="$state_dir/dumbify-editmark"
 
 dumbify_model="${CLAUDE_DUMBIFY_MODEL:-claude-haiku-4-5}"
-dumbify_max_rounds="${CLAUDE_DUMBIFY_MAX_ROUNDS:-3}"
+dumbify_max_rounds="${CLAUDE_DUMBIFY_MAX_ROUNDS:-2}"
 dumbify_timeout="${CLAUDE_DUMBIFY_TIMEOUT:-180}"
 
 # True if any file on the edit stack is source code. Dumbify is about code
@@ -351,23 +370,46 @@ if [ "${CLAUDE_SKIP_DUMBIFY:-0}" != "1" ] \
                 cat <<'DUMBIFY_HEADER'
 You are a complexity canary. You are a small model reading code a larger agent
 just wrote, with no explanation from its author. Your job is to test whether the
-code is understandable in isolation.
+CHANGED code is understandable.
 
-For each function or section in the diffs below, explain in your own words:
+You are given two things below: the diffs applied this turn, and the FULL current
+contents of each file they touched. Use the full file as context. A definition,
+variable, or helper that the diff references but that lives elsewhere in the file
+is available to you, so "I can't see where X is defined" is NOT a valid confusion
+unless X is genuinely absent from the file.
+
+For each function or section in the diffs, explain in your own words:
 - what it does,
 - what its inputs mean and what it returns,
-- and any concern that makes it hard to follow.
+- and any concern that makes it hard to follow. Label each concern:
+    BLOCKS       - you could not work out what the changed code actually does.
+    NICE-TO-HAVE - you understood it, but a comment or clearer name would help.
 
 Rules:
-- Judge ONLY from the code shown plus what you can read in the repository. Nobody
-  will explain it to you; that is the point.
-- Be honest. If something confuses you, say so plainly and say what. Do not
-  pretend to understand. Hedging ("I think", "probably", "I'm not sure") is a
-  signal worth stating outright.
-- Do not suggest fixes. Just explain and report any confusion.
+- Judge from the diffs plus the full files shown and anything else you can read in
+  the repository. Nobody will explain it to you; that is the point.
+- Be honest. If something genuinely stops you understanding the behaviour, say so
+  plainly and label it BLOCKS. Hedging ("I think", "probably", "I'm not sure")
+  about what the code DOES is itself a BLOCKS signal worth stating outright.
+- Do NOT report code outside this turn's change (untouched surrounding functions,
+  the harness/hook protocol that consumes this script's output, the build system)
+  as confusion. That is context, not the work under review.
+- Do not suggest fixes. Just explain, and label each concern BLOCKS or NICE-TO-HAVE.
 DUMBIFY_HEADER
                 printf '\n=== DIFFS JUST APPLIED THIS TURN ===\n'
                 render_diffs "$edits_stack" | head -c 40000
+                # Full current contents of each touched file (deduped), so a
+                # reference the diff makes to code defined elsewhere in the same
+                # file is no longer a false "I can't see it" confusion. Mirrors
+                # the full-file context the Phase A rule review already gets.
+                printf '\n=== FULL CURRENT CONTENTS OF THE TOUCHED FILES (context: definitions the diffs reference live here) ===\n'
+                while IFS= read -r dumbify_context_path; do
+                    [ -z "$dumbify_context_path" ] && continue
+                    [ -f "$dumbify_context_path" ] || continue
+                    printf '\n--- %s ---\n' "$dumbify_context_path"
+                    head -c 40000 "$dumbify_context_path"
+                    printf '\n'
+                done < <(jq -r '.tool_input.file_path // empty' "$edits_stack" 2>/dev/null | sort -u)
             } > "$dumbify_prompt"
 
             # Recursion guard: nested `claude` with every gate phase disabled.
@@ -395,9 +437,9 @@ DUMBIFY_HEADER
                 printf '%s' "$dumbify_round" > "$dumbify_round_file"
                 printf '%s' "$dumbify_current_mark" > "$dumbify_editmark"
 
-                reason="A $dumbify_model model (a small 'complexity canary') read the code you changed this turn, with no help, and explained it as follows (round $dumbify_round of $dumbify_max_rounds). You are the larger model. Judge whether its explanation is CORRECT and unconfused:
-  1. If it misread the code or hedged/was confused, the code is too complex. Apply a behaviour-preserving simplification (split a large dispatch into named functions, bundle threaded parameters into a record, add a domain-bridging comment, extract a capturing where-block). Your edits trigger a re-explanation. Do NOT change behaviour.
-  2. If it understood the code correctly, make no change and say so; the gate moves on.
+                reason="A $dumbify_model model (a small 'complexity canary') read the code you changed this turn, with the full files as context, and explained it as follows (round $dumbify_round of $dumbify_max_rounds). You are the larger model and the final judge. Weigh its explanation:
+  1. If it could NOT work out what the changed code DOES (a BLOCKS concern, a misread, or hedging about behaviour), the code is too complex. Apply a behaviour-preserving simplification (split a large dispatch into named functions, bundle threaded parameters into a record, add a domain-bridging comment, extract a capturing where-block). Your edits trigger a re-explanation. Do NOT change behaviour.
+  2. If it understood the behaviour correctly, make no change and say so; the gate moves on. A NICE-TO-HAVE request for more comments when it already understood is advisory: weigh it, but you may decline and proceed rather than pile on prose.
 Set CLAUDE_SKIP_DUMBIFY=1 to disable this gate.
 
 --- canary explanation ---
@@ -427,10 +469,26 @@ fi
 # type-checker already kills the bugs a paragraph-level reviewer would catch; what
 # survives is semantic, which is exactly what a failing test pins down. Requiring
 # evidence also auto-filters confabulated "bugs": no reproducer, no finding.
+#
+# Decision: the critic is an ADVISOR, not a wall. The worker (the larger model)
+# is the final judge and must always be able to shrug a challenge off. So, exactly
+# like dumbify, convergence is OBSERVED via the edit stack rather than forced: the
+# critic surfaces its challenges once, and if the worker makes NO new edits before
+# the next Stop (it stood by its work, or rebutted the claims in prose) the gate
+# accepts that judgement and moves on. Only a real fix (new edits, so the stack
+# grows) earns a fresh critique. CLAUDE_CRITIQUE_MAX_ROUNDS stays as a backstop
+# against an edit-edit-edit loop, not as a minimum number of rounds to endure.
 
 critique_done_flag="$state_dir/critique-done"
 critique_round_file="$state_dir/critique-round"
 critique_prev="$state_dir/critique-prev"
+# The editmark is the edit-stack size (line count) captured when a challenge
+# blocks; a later Stop compares it to the current size to tell a fix (the stack
+# grew) from a shrug (unchanged). Cross-Stop state lifecycle: $state_dir lives on
+# tmpfs and persists across all the Stop invocations of ONE turn, and is wiped
+# per user prompt by reset-turn-state.sh. That is what lets the mark written when
+# a challenge blocks (see below) be read again on the next Stop.
+critique_editmark="$state_dir/critique-editmark"
 
 critique_model="${CLAUDE_CRITIQUE_MODEL:-claude-opus-4-8}"
 critique_max_rounds="${CLAUDE_CRITIQUE_MAX_ROUNDS:-2}"
@@ -452,11 +510,28 @@ if [ "${CLAUDE_SKIP_CRITIQUE:-0}" != "1" ] \
     critique_has_edits=0
     [ -s "$edits_stack" ] && critique_has_edits=1
 
+    # The stack size a previous challenge this turn was based on, used to detect a
+    # shrug. Same basis as dumbify's editmark: the hook only reads the stack here
+    # (Phase A claims it later), so the count is stable across a Stop on which the
+    # critic blocked. A missing or empty stack (a research/conversational turn)
+    # counts as 0.
+    critique_current_mark=0
+    [ -s "$edits_stack" ] && critique_current_mark=$(wc -l < "$edits_stack" | tr -d ' ')
+
     if [ "$critique_has_edits" = "0" ] && [ "$critique_touched" = "0" ]; then
         # A pure conversational turn touched nothing and ran no tools: there is
         # no action or claim grounded in work to refute. Nothing to do.
         : > "$critique_done_flag"
+    elif [ -f "$critique_editmark" ] \
+         && [ "$(cat "$critique_editmark")" = "$critique_current_mark" ]; then
+        # The critic already challenged this turn and the worker has made NO new
+        # edits since: it stood by its work, or rebutted the claims in prose. The
+        # critic is an advisor, not a wall, so a shrug ends the debate. Only new
+        # edits (a real fix) would have grown the stack and earned a re-critique.
+        : > "$critique_done_flag"
     else
+        # First critique this turn, or the worker made new edits in response that
+        # warrant a fresh look.
         # Resolve a repo so the critic can run tests and read code. Prefer the
         # first edited file's root; otherwise the gate's working directory.
         critique_first_file=$(jq -r '.tool_input.file_path // empty' "$edits_stack" 2>/dev/null | head -n 1)
@@ -568,11 +643,16 @@ CRITIQUE_HEADER
 
             if [ "$critique_round" -le "$critique_max_rounds" ]; then
                 printf '%s' "$critique_output" > "$critique_prev"
+                # Record the stack size this challenge was based on. If the worker
+                # makes no new edits before the next Stop, the editmark short
+                # circuit above reads it as a shrug and ends the debate; new edits
+                # grow the stack past this mark and earn a fresh critique.
+                printf '%s' "$critique_current_mark" > "$critique_editmark"
 
-                reason="A fresh adversarial $critique_model critic tried to prove your work wrong this turn, using tests and sources, and produced the counter-evidence below (round $critique_round of $critique_max_rounds). For each challenge, either:
+                reason="A fresh adversarial $critique_model critic tried to prove your work wrong this turn, using tests and sources, and produced the counter-evidence below (round $critique_round of $critique_max_rounds). This critic is an advisor, not a wall: you are the final judge. For each challenge, either:
   1. Agree: fix the code, or correct the claim. Code fixes are re-critiqued and rule-checked automatically.
-  2. Disagree: rebut it with STRONGER evidence than the critic brought (run the test yourself, cite a better source). Out-evidence it; do not just assert.
-Do not silently ignore a challenge. Set CLAUDE_SKIP_CRITIQUE=1 to disable this gate.
+  2. Disagree: rebut it with STRONGER evidence than the critic brought (run the test yourself, cite a better source), or simply stand by your work. Do not just assert.
+Engage every challenge, then decide. If you make no further edits, the gate takes that as your considered judgement and moves on (a shrug is allowed); it does not re-litigate. Set CLAUDE_SKIP_CRITIQUE=1 to disable this gate.
 
 --- critic challenges ---
 $critique_output
@@ -581,7 +661,8 @@ $critique_output
                 jq -n --arg reason "$reason" '{decision: "block", reason: $reason}'
                 exit 0
             fi
-            # Round cap reached: the model has engaged rounds 1..max. Stop
+            # Round cap reached: the worker kept editing through every allowed
+            # round, so the stack grew each Stop and never read as a shrug. Stop
             # debating and fall through; remaining suspicions are left for the
             # human reviewer rather than looping forever.
         fi
