@@ -37,20 +37,29 @@ dumbify_response="$work/dumbify-response.txt"
 reviewer_response="$work/reviewer-response.txt"
 reviewer_prompt_log="$work/reviewer-prompt.txt"
 stub_log="$work/stub-invocations.log"
+# When this file holds a phase keyword (dumbify|critique|review), the stub
+# simulates a broken nested call for that phase: it writes to stderr and exits
+# non-zero with empty stdout, so the fail-loud path can be exercised.
+stub_fail_file="$work/stub-fail"
 echo OK > "$critic_response"
 echo OK > "$reviewer_response"
 echo "This function adds two integers and returns their sum." > "$dumbify_response"
+: > "$stub_fail_file"
 
 cat > "$stub_bin/claude" <<STUB
 #!/usr/bin/env bash
 input=\$(cat)
 echo "SKIP_CRITIQUE=\${CLAUDE_SKIP_CRITIQUE:-unset} SKIP_DUMBIFY=\${CLAUDE_SKIP_DUMBIFY:-unset}" >> "$stub_log"
+fail_phase=\$(cat "$stub_fail_file" 2>/dev/null)
 if printf '%s' "\$input" | grep -q 'complexity canary'; then
+    if [ "\$fail_phase" = "dumbify" ]; then echo "stub: simulated dumbify failure" >&2; exit 1; fi
     cat "$dumbify_response"
 elif printf '%s' "\$input" | grep -q 'adversarial correctness critic'; then
+    if [ "\$fail_phase" = "critique" ]; then echo "stub: simulated critic failure" >&2; exit 1; fi
     cat "$critic_response"
 elif printf '%s' "\$input" | grep -q 'rule-compliance reviewer'; then
     printf '%s' "\$input" > "$reviewer_prompt_log"
+    if [ "\$fail_phase" = "review" ]; then echo "stub: simulated reviewer failure" >&2; exit 1; fi
     cat "$reviewer_response"
 fi
 STUB
@@ -62,6 +71,8 @@ mkdir -p "$TMPDIR"
 # Isolate HOME so the gate's corpus build does not read the real CLAUDE.md.
 export HOME="$work/home"
 mkdir -p "$HOME/.claude"
+# Durable failure log at a known path so the fail-loud tests can assert on it.
+export CLAUDE_GATE_FAILURE_LOG="$work/gate-failures.log"
 
 state_dir_for() { printf '%s/claude-turn-state/%s' "$TMPDIR" "$1"; }
 
@@ -274,6 +285,48 @@ seed_edit a2 hs 1
 out=$(run_gate a2)
 assert_absent '"decision": "block"' "$out" "a2: a clean rule review ends the turn"
 
+unset CLAUDE_SKIP_DUMBIFY
+unset CLAUDE_SKIP_CRITIQUE
+
+############################################################################
+# Fail-loud: a broken nested call (non-zero exit, empty output) must be
+# surfaced, not read as a clean pass. Covers the reviewer and the critic.
+############################################################################
+
+# === f1: a broken rule reviewer blocks loudly, logs, and keeps the edits =====
+export CLAUDE_SKIP_DUMBIFY=1
+export CLAUDE_SKIP_CRITIQUE=1
+: > "$CLAUDE_GATE_FAILURE_LOG"
+echo review > "$stub_fail_file"          # reviewer exits 1 with empty stdout
+seed_edit f1 hs 1
+sdir=$(state_dir_for f1)
+out=$(run_gate f1)
+assert_contains '"decision": "block"' "$out" "f1: a broken reviewer blocks the stop"
+assert_contains 'GATE INFRASTRUCTURE FAILURE' "$out" "f1: the block names it an infrastructure failure"
+assert_contains 'simulated reviewer failure' "$out" "f1: the captured stderr is forwarded"
+assert_contains 'gate nested-call failure' "$(cat "$CLAUDE_GATE_FAILURE_LOG" 2>/dev/null)" "f1: the failure is written to the durable log"
+assert_file "$sdir/edits.jsonl" "f1: the diffs are returned to the stack for re-review, not lost"
+: > "$stub_fail_file"
+
+# === f2: the loud warning fires once per turn, then lets the turn proceed =====
+echo review > "$stub_fail_file"
+sdir=$(state_dir_for f2)
+mkdir -p "$sdir"; : > "$sdir/review-broke"   # already surfaced this turn
+seed_edit f2 hs 1
+out=$(run_gate f2)
+assert_absent '"decision": "block"' "$out" "f2: an already-surfaced failure does not re-block"
+: > "$stub_fail_file"
+
+# === f3: a broken critic is surfaced loudly too =============================
+export CLAUDE_SKIP_DUMBIFY=1
+unset CLAUDE_SKIP_CRITIQUE
+: > "$CLAUDE_GATE_FAILURE_LOG"
+echo critique > "$stub_fail_file"        # critic exits 1 with empty stdout
+seed_edit f3 hs 1
+out=$(run_gate f3)
+assert_contains 'GATE INFRASTRUCTURE FAILURE' "$out" "f3: a broken critic blocks loudly"
+assert_contains 'critique' "$out" "f3: the block names the critique phase"
+: > "$stub_fail_file"
 unset CLAUDE_SKIP_DUMBIFY
 unset CLAUDE_SKIP_CRITIQUE
 
