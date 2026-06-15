@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Behaviour test for the Phase 0 adversarial-critique state machine in
-# stop-gate.sh. It does NOT reimplement the gate: it drives the real hook with
+# Behaviour test for the Phase 0 (dumbify) and Phase 1 (critique) state machines
+# in stop-gate.sh. It does NOT reimplement the gate: it drives the real hook with
 # synthetic Stop-hook input and a stubbed `claude`, then asserts what the hook
 # actually emitted and wrote to its per-turn state.
 #
-# The stub `claude` branches on the prompt it receives over stdin: the critic
-# prompt ("adversarial code critic") returns a canned response we control; the
-# rule reviewer prompt ("rule-compliance reviewer") always returns OK so Phase A
-# never interferes with what we are asserting about Phase 0. The stub also logs
-# the CLAUDE_SKIP_CRITIQUE it was invoked with, so we can assert the recursion
-# guard.
+# The stub `claude` branches on the prompt it receives over stdin:
+#   "complexity canary"        -> dumbify explainer: returns a canned explanation
+#   "adversarial code critic"  -> critic: returns a canned response we control
+#   "rule-compliance reviewer" -> rule reviewer: always returns OK
+# so each phase can be tested in isolation by skipping the others. The stub also
+# logs the CLAUDE_SKIP_* it was invoked with, so we can assert the recursion
+# guards.
 #
 # Usage: test/critique-gate.sh [path-to-stop-gate.sh]
-# Defaults to hooks/stop-gate.sh next to this test's repo root.
 
 set -uo pipefail
 
@@ -31,13 +31,18 @@ trap 'rm -rf "$work"' EXIT
 stub_bin="$work/bin"
 mkdir -p "$stub_bin"
 critic_response="$work/critic-response.txt"
+dumbify_response="$work/dumbify-response.txt"
 stub_log="$work/stub-invocations.log"
+echo OK > "$critic_response"
+echo "This function adds two integers and returns their sum." > "$dumbify_response"
 
 cat > "$stub_bin/claude" <<STUB
 #!/usr/bin/env bash
 input=\$(cat)
-echo "SKIP_CRITIQUE=\${CLAUDE_SKIP_CRITIQUE:-unset}" >> "$stub_log"
-if printf '%s' "\$input" | grep -q 'adversarial code critic'; then
+echo "SKIP_CRITIQUE=\${CLAUDE_SKIP_CRITIQUE:-unset} SKIP_DUMBIFY=\${CLAUDE_SKIP_DUMBIFY:-unset}" >> "$stub_log"
+if printf '%s' "\$input" | grep -q 'complexity canary'; then
+    cat "$dumbify_response"
+elif printf '%s' "\$input" | grep -q 'adversarial code critic'; then
     cat "$critic_response"
 elif printf '%s' "\$input" | grep -q 'rule-compliance reviewer'; then
     echo OK
@@ -52,16 +57,19 @@ mkdir -p "$TMPDIR"
 export HOME="$work/home"
 mkdir -p "$HOME/.claude"
 
-# state_dir mirrors stop-gate.sh's own computation.
 state_dir_for() { printf '%s/claude-turn-state/%s' "$TMPDIR" "$1"; }
 
 seed_edit() {
-    # seed_edit SESSION  -> one recorded edit on the session's stack.
-    sdir=$(state_dir_for "$1")
-    mkdir -p "$sdir"
-    printf '%s\n' \
-      '{"tool":"Edit","tool_input":{"file_path":"'"$work"'/subject.hs","old_string":"a","new_string":"b"}}' \
-      > "$sdir/edits.jsonl"
+    # seed_edit SESSION [EXT] [COUNT]  -> COUNT recorded edits to a .EXT file.
+    sess=$1; ext=${2:-hs}; count=${3:-1}
+    sdir=$(state_dir_for "$sess"); mkdir -p "$sdir"
+    : > "$sdir/edits.jsonl"
+    i=0
+    while [ "$i" -lt "$count" ]; do
+        printf '{"tool":"Edit","tool_input":{"file_path":"%s/subject.%s","old_string":"a","new_string":"b"}}\n' \
+            "$work" "$ext" >> "$sdir/edits.jsonl"
+        i=$((i + 1))
+    done
 }
 
 run_gate() {
@@ -78,54 +86,116 @@ assert_contains() { case "$2" in *"$1"*) pass "$3" ;; *) fail "$3 (missing: $1)"
 assert_absent()   { case "$2" in *"$1"*) fail "$3 (unexpected: $1)" ;; *) pass "$3" ;; esac; }
 assert_file()     { if [ -e "$1" ]; then pass "$2"; else fail "$2 (no file: $1)"; fi; }
 assert_no_file()  { if [ -e "$1" ]; then fail "$2 (file exists: $1)"; else pass "$2"; fi; }
+assert_eq()       { if [ "$1" = "$2" ]; then pass "$3"; else fail "$3 (want $2, got $1)"; fi; }
 
-# === Case 1: critique finds a demonstrable bug -> blocks the turn ===========
+############################################################################
+# Phase 0: dumbify (complexity canary). Critique skipped to isolate it.
+############################################################################
+export CLAUDE_SKIP_CRITIQUE=1
+
+# === d1: canary explains code -> blocks for the larger model to judge =======
+: > "$stub_log"
+seed_edit d1 hs 1
+out=$(run_gate d1)
+sdir=$(state_dir_for d1)
+assert_contains '"decision": "block"' "$out" "d1: a code change triggers a canary explanation block"
+assert_contains 'canary explanation' "$out" "d1: block carries the canary explanation"
+assert_contains 'adds two integers'  "$out" "d1: the actual explanation is forwarded"
+assert_eq "$(cat "$sdir/dumbify-round" 2>/dev/null)" "1" "d1: dumbify round is 1"
+assert_eq "$(cat "$sdir/dumbify-editmark" 2>/dev/null)" "1" "d1: editmark records the stack size"
+assert_no_file "$sdir/dumbify-done" "d1: dumbify not marked done while explaining"
+assert_contains 'SKIP_DUMBIFY=1' "$(cat "$stub_log")" "d1: recursion guard set on the nested canary"
+
+# === d2: no new edits since last explanation -> accepted, move on ===========
+seed_edit d2 hs 1
+sdir=$(state_dir_for d2)
+printf '1' > "$sdir/dumbify-editmark"   # equals current stack size -> accepted
+printf '1' > "$sdir/dumbify-round"
+out=$(run_gate d2)
+assert_absent 'canary explanation' "$out" "d2: an accepted explanation does not block"
+assert_file "$sdir/dumbify-done" "d2: dumbify marked done once accepted"
+
+# === d3: new edits appeared -> canary re-explains, round advances ===========
+seed_edit d3 hs 2                       # 2 edits now
+sdir=$(state_dir_for d3)
+printf '1' > "$sdir/dumbify-editmark"   # last explanation saw 1 edit -> simplified
+printf '1' > "$sdir/dumbify-round"
+out=$(run_gate d3)
+assert_contains 'canary explanation' "$out" "d3: a simplification triggers re-explanation"
+assert_eq "$(cat "$sdir/dumbify-round" 2>/dev/null)" "2" "d3: dumbify round advanced to 2"
+assert_eq "$(cat "$sdir/dumbify-editmark" 2>/dev/null)" "2" "d3: editmark updated to new stack size"
+
+# === d4: round cap reached -> stop canarying ================================
+seed_edit d4 hs 2
+sdir=$(state_dir_for d4)
+printf '1' > "$sdir/dumbify-editmark"
+printf '3' > "$sdir/dumbify-round"      # next would be 4, past the default cap of 3
+out=$(run_gate d4)
+assert_absent 'canary explanation' "$out" "d4: past the round cap the canary stops"
+assert_file "$sdir/dumbify-done" "d4: dumbify marked done at the cap"
+
+# === d5: non-code edit -> dumbify does not fire ============================
+seed_edit d5 md 1
+sdir=$(state_dir_for d5)
+out=$(run_gate d5)
+assert_absent 'canary explanation' "$out" "d5: a docs-only change does not trigger the canary"
+assert_no_file "$sdir/dumbify-done" "d5: non-code leaves no dumbify state"
+
+# === d6: skip flag disables dumbify ========================================
+seed_edit d6 hs 1
+sdir=$(state_dir_for d6)
+out=$(CLAUDE_SKIP_DUMBIFY=1 bash "$gate" <<<'{"session_id":"d6","transcript_path":""}')
+assert_absent 'canary explanation' "$out" "d6: skip flag suppresses the canary"
+assert_no_file "$sdir/dumbify-done" "d6: skipped phase leaves no done flag"
+
+unset CLAUDE_SKIP_CRITIQUE
+
+############################################################################
+# Phase 1: adversarial critique. Dumbify skipped to isolate it.
+############################################################################
+export CLAUDE_SKIP_DUMBIFY=1
+
+# === c1: critique finds a demonstrable bug -> blocks the turn ===============
 : > "$stub_log"
 printf '%s' "$challenge_block" > "$critic_response"
-seed_edit s1
-out=$(run_gate s1)
-sdir=$(state_dir_for s1)
-assert_contains '"decision": "block"' "$out" "case1: a demonstrable bug blocks the stop"
-assert_contains 'critic challenges'   "$out" "case1: block reason carries the challenges"
-assert_contains 'off-by-one'          "$out" "case1: the actual finding is forwarded"
-if [ "$(cat "$sdir/critique-round" 2>/dev/null)" = "1" ]; then
-    pass "case1: round counter is 1"
-else
-    fail "case1: round counter not 1"
-fi
-assert_no_file "$sdir/critique-done" "case1: critique is not marked done while bugs remain"
-assert_contains 'SKIP_CRITIQUE=1' "$(cat "$stub_log")" "case1: recursion guard set on the nested critic"
+seed_edit c1 hs 1
+out=$(run_gate c1)
+sdir=$(state_dir_for c1)
+assert_contains '"decision": "block"' "$out" "c1: a demonstrable bug blocks the stop"
+assert_contains 'critic challenges'   "$out" "c1: block reason carries the challenges"
+assert_contains 'off-by-one'          "$out" "c1: the actual finding is forwarded"
+assert_eq "$(cat "$sdir/critique-round" 2>/dev/null)" "1" "c1: round counter is 1"
+assert_no_file "$sdir/critique-done" "c1: critique not marked done while bugs remain"
+assert_contains 'SKIP_CRITIQUE=1' "$(cat "$stub_log")" "c1: recursion guard set on the nested critic"
 
-# === Case 2: critic returns OK -> no critique block, phase marked done ======
+# === c2: critic returns OK -> no critique block, phase marked done ==========
 echo OK > "$critic_response"
-seed_edit s2
-out=$(run_gate s2)
-sdir=$(state_dir_for s2)
-assert_absent 'critic challenges' "$out" "case2: a clean critique does not block"
-assert_absent '"decision": "block"' "$out" "case2: rule review (stub OK) does not block either"
-assert_file "$sdir/critique-done" "case2: critique marked done after a clean pass"
+seed_edit c2 hs 1
+out=$(run_gate c2)
+sdir=$(state_dir_for c2)
+assert_absent 'critic challenges' "$out" "c2: a clean critique does not block"
+assert_absent '"decision": "block"' "$out" "c2: rule review (stub OK) does not block either"
+assert_file "$sdir/critique-done" "c2: critique marked done after a clean pass"
 
-# === Case 3: round cap reached -> stop debating, fall through ===============
+# === c3: round cap reached -> stop debating, fall through ===================
 printf '%s' "$challenge_block" > "$critic_response"
-seed_edit s3
-sdir=$(state_dir_for s3)
+seed_edit c3 hs 1
+sdir=$(state_dir_for c3)
 printf '2' > "$sdir/critique-round"   # next round would be 3, past the default cap of 2
-out=$(run_gate s3)
-assert_absent 'critic challenges' "$out" "case3: past the round cap the gate stops blocking"
-assert_file "$sdir/critique-done" "case3: critique marked done once the cap is hit"
-if [ "$(cat "$sdir/critique-round" 2>/dev/null)" = "3" ]; then
-    pass "case3: round counter advanced to 3"
-else
-    fail "case3: round counter not 3"
-fi
+out=$(run_gate c3)
+assert_absent 'critic challenges' "$out" "c3: past the round cap the gate stops blocking"
+assert_file "$sdir/critique-done" "c3: critique marked done once the cap is hit"
+assert_eq "$(cat "$sdir/critique-round" 2>/dev/null)" "3" "c3: round counter advanced to 3"
 
-# === Case 4: CLAUDE_SKIP_CRITIQUE disables Phase 0 entirely =================
+# === c4: CLAUDE_SKIP_CRITIQUE disables Phase 1 entirely =====================
 printf '%s' "$challenge_block" > "$critic_response"
-seed_edit s4
-sdir=$(state_dir_for s4)
-out=$(CLAUDE_SKIP_CRITIQUE=1 run_gate s4)
-assert_absent 'critic challenges' "$out" "case4: skip flag suppresses the critique block"
-assert_no_file "$sdir/critique-done" "case4: skipped phase leaves no done flag"
+seed_edit c4 hs 1
+sdir=$(state_dir_for c4)
+out=$(CLAUDE_SKIP_CRITIQUE=1 bash "$gate" <<<'{"session_id":"c4","transcript_path":""}')
+assert_absent 'critic challenges' "$out" "c4: skip flag suppresses the critique block"
+assert_no_file "$sdir/critique-done" "c4: skipped phase leaves no done flag"
+
+unset CLAUDE_SKIP_DUMBIFY
 
 echo
 if [ "$fails" -eq 0 ]; then

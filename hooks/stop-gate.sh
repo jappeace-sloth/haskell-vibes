@@ -1,18 +1,31 @@
 #!/usr/bin/env bash
 # Stop hook: end-of-turn gate.
 #
-# Runs a three-phase state machine over per-turn state kept on tmpfs:
+# Runs a four-phase state machine over per-turn state kept on tmpfs:
 #
-#   Phase 0 (adversarial critique). Before any rule review, a fresh independent
-#   critic (default Opus) is asked to REFUTE the changes made this turn and find
-#   bugs. Its currency is a demonstrated failure (a failing test or a
-#   reproducing command), not prose: a bug it can demonstrate blocks the turn so
-#   the larger model fixes or rebuts; a suspicion it cannot reproduce is dropped.
+#   Phase 0 (dumbify / complexity canary). First, for code-touching turns only,
+#   a small model (Haiku) reads the code changed this turn with no help and
+#   explains it; the larger main-loop model judges whether that explanation is
+#   correct. If Haiku misread or hedged, the code is too complex, so the large
+#   model simplifies it (behaviour-preserving) and Haiku re-explains. Convergence
+#   is observed via the edit stack: no new edits after an explanation means the
+#   large model accepted it. Runs before critique so the cheap canary shapes the
+#   code first and the expensive critic verifies the simplified result. Bounded
+#   by CLAUDE_DUMBIFY_MAX_ROUNDS. Mirrors the dumbify-my-code skill.
+#
+#   Phase 1 (adversarial critique). A fresh independent critic (default Opus) is
+#   asked to REFUTE the changes made this turn and find bugs. Its currency is a
+#   demonstrated failure (a failing test or a reproducing command), not prose: a
+#   bug it can demonstrate blocks the turn so the larger model fixes or rebuts; a
+#   suspicion it cannot reproduce is dropped. Running after dumbify makes the
+#   critic the last correctness gate, so it verifies the canary's refactor too.
 #   The critic's own fixes are recorded onto the same edits.jsonl stack, so they
 #   flow into Phase A and get rule-checked too. Bounded by
-#   CLAUDE_CRITIQUE_MAX_ROUNDS so the debate cannot loop forever. The critic is a
-#   nested `claude` that may run commands, so it is launched with every gate
-#   phase disabled in its environment to stop it re-triggering this hook.
+#   CLAUDE_CRITIQUE_MAX_ROUNDS so the debate cannot loop forever.
+#
+#   Both Phase 0 and Phase 1 run a nested `claude` that may run commands, so each
+#   is launched with every gate phase disabled in its environment to stop it
+#   re-triggering this hook.
 #
 #   Phase A (rule review). Claims the edits.jsonl review stack that
 #   record-edit.sh built during the turn and reviews every diff in a SINGLE
@@ -31,8 +44,11 @@
 # Per-turn state is reset by reset-turn-state.sh on UserPromptSubmit, so the
 # verify-done flag and any leftover stack clear when the next prompt arrives.
 #
-# Disable critique with CLAUDE_SKIP_CRITIQUE=1, review with
-# CLAUDE_SKIP_RULE_CHECK=1, verification with CLAUDE_SKIP_VERIFY_CHECK=1.
+# Disable dumbify with CLAUDE_SKIP_DUMBIFY=1, critique with
+# CLAUDE_SKIP_CRITIQUE=1, review with CLAUDE_SKIP_RULE_CHECK=1, verification with
+# CLAUDE_SKIP_VERIFY_CHECK=1.
+# Tune dumbify with CLAUDE_DUMBIFY_MODEL (default claude-haiku-4-5),
+# CLAUDE_DUMBIFY_MAX_ROUNDS (default 3), CLAUDE_DUMBIFY_TIMEOUT (default 180).
 # Tune critique with CLAUDE_CRITIQUE_MODEL (default claude-opus-4-8),
 # CLAUDE_CRITIQUE_MAX_ROUNDS (default 2), CLAUDE_CRITIQUE_TIMEOUT (default 300).
 
@@ -143,14 +159,135 @@ render_diffs() {
     ' "$1"
 }
 
-# =====================  Phase 0: adversarial critique  =====================
+# =====================  Phase 0: dumbify (complexity canary)  ===============
 #
-# Decision: critique runs BEFORE rule review (Phase A), not after. A fresh critic
-# is most useful at finding bugs; the fixes it triggers are real code changes
-# that must themselves obey CLAUDE.md. Running critique first means those fixes
-# land on the edits.jsonl stack and are rule-checked by Phase A in the same turn.
-# Alternative considered: critique after rules. Rejected because critique-induced
-# fixes would then escape rule review until the next turn.
+# Decision: dumbify runs FIRST, before critique. It is a behaviour-preserving
+# refactor, so it should be shaped before the expensive critic runs (cheap Haiku
+# before agentic Opus) and, by running first, its refactor is verified by the
+# critic that follows rather than shipping unchecked. A small model explains the
+# changed code with no help; the larger main-loop model judges the explanation.
+#
+# Decision: convergence is OBSERVED, not asserted. After each explanation we
+# record the edit-stack size. Next Stop, if no new edits were made the large
+# model accepted the explanation as correct, so we move on; if new edits appeared
+# the code was simplified, so Haiku re-explains. Bounded by
+# CLAUDE_DUMBIFY_MAX_ROUNDS. Fires only for code: docs/config carry no functions
+# to canary.
+
+dumbify_done_flag="$state_dir/dumbify-done"
+dumbify_round_file="$state_dir/dumbify-round"
+dumbify_editmark="$state_dir/dumbify-editmark"
+
+dumbify_model="${CLAUDE_DUMBIFY_MODEL:-claude-haiku-4-5}"
+dumbify_max_rounds="${CLAUDE_DUMBIFY_MAX_ROUNDS:-3}"
+dumbify_timeout="${CLAUDE_DUMBIFY_TIMEOUT:-180}"
+
+# True if any file on the edit stack is source code. Dumbify is about code
+# comprehension, so prose and config edits do not trigger it.
+dumbify_has_code=0
+while IFS= read -r dumbify_path; do
+    case "$dumbify_path" in
+        *.hs|*.lhs|*.hsig|*.cabal|*.nix|*.sh|*.bash|*.py|*.rs|*.js|*.ts|*.tsx|*.go|*.c|*.h|*.cpp|*.hpp|*.java)
+            dumbify_has_code=1; break ;;
+    esac
+done < <(jq -r '.tool_input.file_path // empty' "$edits_stack" 2>/dev/null)
+
+if [ "${CLAUDE_SKIP_DUMBIFY:-0}" != "1" ] \
+   && [ ! -f "$dumbify_done_flag" ] \
+   && [ -s "$edits_stack" ] \
+   && [ "$dumbify_has_code" = "1" ] \
+   && command -v claude >/dev/null 2>&1; then
+
+    dumbify_current_mark=$(wc -l < "$edits_stack" 2>/dev/null | tr -d ' ')
+
+    if [ -f "$dumbify_editmark" ] && [ "$(cat "$dumbify_editmark")" = "$dumbify_current_mark" ]; then
+        # No new edits since the last explanation: the larger model judged the
+        # explanation correct and chose not to simplify. Accept and move on.
+        : > "$dumbify_done_flag"
+    else
+        dumbify_round=$(cat "$dumbify_round_file" 2>/dev/null || echo 0)
+        dumbify_round=$((dumbify_round + 1))
+
+        if [ "$dumbify_round" -gt "$dumbify_max_rounds" ]; then
+            # Round cap reached: stop canarying and let critique/rules proceed.
+            : > "$dumbify_done_flag"
+        else
+            dumbify_repo=""
+            dumbify_first_file=$(jq -r '.tool_input.file_path // empty' "$edits_stack" 2>/dev/null | head -n 1)
+            if [ -n "$dumbify_first_file" ]; then
+                dumbify_repo=$(git -C "$(dirname "$dumbify_first_file")" rev-parse --show-toplevel 2>/dev/null || true)
+            fi
+
+            dumbify_prompt=$(mktemp)
+            {
+                cat <<'DUMBIFY_HEADER'
+You are a complexity canary. You are a small model reading code a larger agent
+just wrote, with no explanation from its author. Your job is to test whether the
+code is understandable in isolation.
+
+For each function or section in the diffs below, explain in your own words:
+- what it does,
+- what its inputs mean and what it returns,
+- and any concern that makes it hard to follow.
+
+Rules:
+- Judge ONLY from the code shown plus what you can read in the repository. Nobody
+  will explain it to you; that is the point.
+- Be honest. If something confuses you, say so plainly and say what. Do not
+  pretend to understand. Hedging ("I think", "probably", "I'm not sure") is a
+  signal worth stating outright.
+- Do not suggest fixes. Just explain and report any confusion.
+DUMBIFY_HEADER
+                printf '\n=== DIFFS JUST APPLIED THIS TURN ===\n'
+                render_diffs "$edits_stack" | head -c 40000
+            } > "$dumbify_prompt"
+
+            # Recursion guard: nested `claude` with every gate phase disabled.
+            if [ -n "$dumbify_repo" ]; then
+                dumbify_output=$(cd "$dumbify_repo" \
+                    && CLAUDE_SKIP_DUMBIFY=1 CLAUDE_SKIP_CRITIQUE=1 CLAUDE_SKIP_RULE_CHECK=1 CLAUDE_SKIP_VERIFY_CHECK=1 \
+                       timeout "$dumbify_timeout" claude -p --model "$dumbify_model" < "$dumbify_prompt" 2>/dev/null || true)
+            else
+                dumbify_output=$(CLAUDE_SKIP_DUMBIFY=1 CLAUDE_SKIP_CRITIQUE=1 CLAUDE_SKIP_RULE_CHECK=1 CLAUDE_SKIP_VERIFY_CHECK=1 \
+                    timeout "$dumbify_timeout" claude -p --model "$dumbify_model" < "$dumbify_prompt" 2>/dev/null || true)
+            fi
+
+            rm -f "$dumbify_prompt"
+
+            if [ -n "$dumbify_output" ]; then
+                # Record the round and the stack size this explanation was based
+                # on, so the next Stop can tell whether the model simplified.
+                printf '%s' "$dumbify_round" > "$dumbify_round_file"
+                printf '%s' "$dumbify_current_mark" > "$dumbify_editmark"
+                rm -f "$verify_done_flag"
+
+                reason="A $dumbify_model model (a small 'complexity canary') read the code you changed this turn, with no help, and explained it as follows (round $dumbify_round of $dumbify_max_rounds). You are the larger model. Judge whether its explanation is CORRECT and unconfused:
+  1. If it misread the code or hedged/was confused, the code is too complex. Apply a behaviour-preserving simplification (split a large dispatch into named functions, bundle threaded parameters into a record, add a domain-bridging comment, extract a capturing where-block). Your edits trigger a re-explanation. Do NOT change behaviour.
+  2. If it understood the code correctly, make no change and say so; the gate moves on.
+Set CLAUDE_SKIP_DUMBIFY=1 to disable this gate.
+
+--- canary explanation ---
+$dumbify_output
+--- end canary explanation ---"
+
+                jq -n --arg reason "$reason" '{decision: "block", reason: $reason}'
+                exit 0
+            fi
+            # Empty output (CLI failure, network hiccup): treat the code as
+            # understandable so infrastructure problems never wedge the turn.
+            : > "$dumbify_done_flag"
+        fi
+    fi
+fi
+
+# =====================  Phase 1: adversarial critique  =====================
+#
+# Decision: critique runs after dumbify (Phase 0) and before rule review (Phase
+# A). After dumbify so the critic is the LAST correctness gate and verifies the
+# canary's behaviour-preserving refactor too; a botched "simplification" would
+# otherwise ship unchecked. Before rules so the fixes it triggers land on the
+# edits.jsonl stack and are rule-checked by Phase A in the same turn, rather than
+# escaping review until the next turn.
 #
 # Decision: the critic's currency is a demonstrated failure, not prose. A strong
 # type-checker already kills the bugs a paragraph-level reviewer would catch; what
