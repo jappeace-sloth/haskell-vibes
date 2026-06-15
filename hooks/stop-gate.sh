@@ -72,6 +72,91 @@ claimed_edits="$state_dir/edits.processing"
 # main-loop model is still the final judge of every finding.
 reviewer_model="claude-sonnet-4-6"
 
+# Args for the two read-only reviewers (Phase 0 canary, Phase A rule review).
+# Neither uses MCP, so we skip the MCP server health-check spawns
+# (hoogle/playwright/tmux registered in ~/.claude.json) that otherwise cost
+# ~2.6s of cold start per call, and restrict them to read-only built-in tools.
+# The JSON has no spaces, so word-splitting on the unquoted expansion yields
+# exactly the three intended tokens. The Phase 1 critic is deliberately NOT
+# given these: it needs full MCP and tool access to gather counter-evidence.
+nomcp_args='--strict-mcp-config --mcp-config {"mcpServers":{}}'
+readonly_tools='--tools Read Grep Glob'
+
+# Durable log of nested-call failures, outside the per-turn state dir (which is
+# wiped each user prompt) so failures survive for inspection. Overridable for
+# tests via CLAUDE_GATE_FAILURE_LOG.
+gate_failure_log="${CLAUDE_GATE_FAILURE_LOG:-$HOME/.claude/gate-failures.log}"
+mkdir -p "$(dirname "$gate_failure_log")" 2>/dev/null || true
+
+# --- nested-call failure handling ------------------------------------------
+#
+# Decision: the gate FAILS LOUD on a broken reviewer, it does not fail open.
+# Previously every phase swallowed the nested `claude` exit code (`|| true`) and
+# its stderr (`2>/dev/null`), then read empty output as "looks clean". That made
+# a timed-out, crashed, or unauthenticated reviewer indistinguishable from a
+# genuine pass: the phase silently did nothing and the turn ended green. We now
+# capture the exit code and stderr, and treat "no usable answer" as a failure to
+# surface, not a pass.
+
+# nested_call_broken EXIT_CODE OUTPUT
+# True (0) when a nested `claude -p` call returned nothing usable: killed by
+# `timeout` (124), any non-zero exit, or exit 0 with empty stdout. A reviewer
+# that answers "OK" exits 0 with output and is NOT broken.
+nested_call_broken() {
+    nested_exit_code=$1
+    nested_stdout=$2
+    if [ "$nested_exit_code" -ne 0 ]; then
+        return 0
+    fi
+    if [ -z "$nested_stdout" ]; then
+        return 0
+    fi
+    return 1
+}
+
+# surface_nested_failure PHASE MODEL EXIT_CODE OUTPUT STDERR_FILE WARN_FLAG
+# Appends the failure (exit code + stderr tail) to gate_failure_log, then on the
+# FIRST occurrence this turn blocks the Stop with a loud, descriptive reason and
+# exits. On later occurrences it returns without blocking, so a permanently
+# broken CLI surfaces once but does not wedge the turn forever.
+surface_nested_failure() {
+    failed_phase=$1
+    failed_model=$2
+    failed_exit=$3
+    failed_output=$4
+    failed_stderr_file=$5
+    failed_warn_flag=$6
+
+    failure_detail="exit=$failed_exit"
+    if [ "$failed_exit" = "124" ]; then
+        failure_detail="$failure_detail (timed out)"
+    fi
+    if [ -z "$failed_output" ]; then
+        failure_detail="$failure_detail, empty output"
+    fi
+
+    {
+        printf '=== gate nested-call failure: phase=%s model=%s %s ===\n' \
+            "$failed_phase" "$failed_model" "$failure_detail"
+        printf 'session=%s\n' "$session_id"
+        printf '%s\n' '--- stderr (last 20 lines) ---'
+        tail -n 20 "$failed_stderr_file" 2>/dev/null
+        printf '\n'
+    } >> "$gate_failure_log"
+
+    if [ -f "$failed_warn_flag" ]; then
+        return 0
+    fi
+    : > "$failed_warn_flag"
+
+    reason="GATE INFRASTRUCTURE FAILURE in the $failed_phase phase: the nested $failed_model call returned no usable result ($failure_detail), so this turn was NOT checked by that phase. Details were appended to $gate_failure_log. Last stderr lines:
+$(tail -n 20 "$failed_stderr_file" 2>/dev/null)
+
+Find out why the reviewer could not run (timeout, auth, MCP, model error) before trusting this turn. This loud warning fires once per turn; you may continue after acknowledging it."
+    jq -n --arg reason "$reason" '{decision: "block", reason: $reason}'
+    exit 0
+}
+
 # --- corpus selection -------------------------------------------------------
 
 # select_skills FILE_LIST_FILE
@@ -286,18 +371,25 @@ DUMBIFY_HEADER
             } > "$dumbify_prompt"
 
             # Recursion guard: nested `claude` with every gate phase disabled.
+            # stderr is captured (not discarded) and the exit code kept, so a
+            # broken call can be explained and surfaced rather than read as clean.
+            dumbify_stderr="$state_dir/dumbify.stderr"
             if [ -n "$dumbify_repo" ]; then
                 dumbify_output=$(cd "$dumbify_repo" \
                     && CLAUDE_SKIP_DUMBIFY=1 CLAUDE_SKIP_CRITIQUE=1 CLAUDE_SKIP_RULE_CHECK=1 \
-                       timeout "$dumbify_timeout" claude -p --model "$dumbify_model" < "$dumbify_prompt" 2>/dev/null || true)
+                       timeout "$dumbify_timeout" claude -p $nomcp_args $readonly_tools --model "$dumbify_model" < "$dumbify_prompt" 2>"$dumbify_stderr")
             else
                 dumbify_output=$(CLAUDE_SKIP_DUMBIFY=1 CLAUDE_SKIP_CRITIQUE=1 CLAUDE_SKIP_RULE_CHECK=1 \
-                    timeout "$dumbify_timeout" claude -p --model "$dumbify_model" < "$dumbify_prompt" 2>/dev/null || true)
+                    timeout "$dumbify_timeout" claude -p $nomcp_args $readonly_tools --model "$dumbify_model" < "$dumbify_prompt" 2>"$dumbify_stderr")
             fi
+            dumbify_exit=$?
 
             rm -f "$dumbify_prompt"
 
-            if [ -n "$dumbify_output" ]; then
+            if nested_call_broken "$dumbify_exit" "$dumbify_output"; then
+                surface_nested_failure "dumbify canary" "$dumbify_model" "$dumbify_exit" "$dumbify_output" "$dumbify_stderr" "$state_dir/dumbify-broke"
+                : > "$dumbify_done_flag"
+            elif [ -n "$dumbify_output" ]; then
                 # Record the round and the stack size this explanation was based
                 # on, so the next Stop can tell whether the model simplified.
                 printf '%s' "$dumbify_round" > "$dumbify_round_file"
@@ -315,8 +407,8 @@ $dumbify_output
                 jq -n --arg reason "$reason" '{decision: "block", reason: $reason}'
                 exit 0
             fi
-            # Empty output (CLI failure, network hiccup): treat the code as
-            # understandable so infrastructure problems never wedge the turn.
+            # Reached only when a broken call was already surfaced once this
+            # turn: mark done so the turn proceeds instead of re-blocking.
             : > "$dumbify_done_flag"
         fi
     fi
@@ -448,21 +540,28 @@ CRITIQUE_HEADER
         # Recursion guard: the critic is a nested `claude` that runs commands and
         # web searches, whose own hooks would otherwise re-enter this gate. Every
         # gate phase is disabled in its environment. Run it in the repo when known.
+        # stderr captured and exit code kept so a broken critic is explained,
+        # not silently read as a clean pass.
+        critique_stderr="$state_dir/critique.stderr"
         if [ -n "$critique_repo" ]; then
             critique_output=$(cd "$critique_repo" \
                 && CLAUDE_SKIP_DUMBIFY=1 CLAUDE_SKIP_CRITIQUE=1 CLAUDE_SKIP_RULE_CHECK=1 \
-                   timeout "$critique_timeout" claude -p --model "$critique_model" < "$critique_prompt" 2>/dev/null || true)
+                   timeout "$critique_timeout" claude -p --model "$critique_model" < "$critique_prompt" 2>"$critique_stderr")
         else
             critique_output=$(CLAUDE_SKIP_DUMBIFY=1 CLAUDE_SKIP_CRITIQUE=1 CLAUDE_SKIP_RULE_CHECK=1 \
-                timeout "$critique_timeout" claude -p --model "$critique_model" < "$critique_prompt" 2>/dev/null || true)
+                timeout "$critique_timeout" claude -p --model "$critique_model" < "$critique_prompt" 2>"$critique_stderr")
         fi
+        critique_exit=$?
 
         rm -f "$critique_prompt"
 
-        # A CHALLENGE block means substantiated counter-evidence. Empty output
-        # (CLI failure, network hiccup) is treated as clean so infrastructure
-        # problems never wedge the turn.
-        if [ -n "$critique_output" ] && printf '%s' "$critique_output" | grep -q '^CHALLENGE:'; then
+        # A broken nested call (timeout/crash/empty) is surfaced loudly rather
+        # than read as clean. Otherwise a CHALLENGE block means substantiated
+        # counter-evidence; clean "OK" falls through to mark the phase done.
+        if nested_call_broken "$critique_exit" "$critique_output"; then
+            surface_nested_failure critique "$critique_model" "$critique_exit" "$critique_output" "$critique_stderr" "$state_dir/critique-broke"
+            : > "$critique_done_flag"
+        elif printf '%s' "$critique_output" | grep -q '^CHALLENGE:'; then
             critique_round=$(cat "$critique_round_file" 2>/dev/null || echo 0)
             critique_round=$((critique_round + 1))
             printf '%s' "$critique_round" > "$critique_round_file"
@@ -530,6 +629,13 @@ Be strict about what counts as a violation:
 - Only flag text that appears in a "--- with ---", "--- new content ---" or
   "--- new source ---" section: that is what the agent actually wrote. Do not
   flag text in a "--- replaced ---" section; that is the old text being removed.
+- A violation can also be the ABSENCE of required text. For rules of the form
+  "always do X" / "every Y must have Z" (e.g. "always add a top-level type
+  signature to every top-level binding"), a diff fragment cannot show a missing
+  line. So for any top-level definition that appears in the diffs (added or
+  modified this turn), consult the FULL FILE CONTENTS section below to check
+  whether the required element is present; if it is missing, flag it. Apply this
+  ONLY to definitions that appear in the diffs, never to untouched code.
 - Do NOT flag stylistic preferences that are not stated in the rules.
 - Do NOT flag judgement calls or things that "might be better".
 - If you are unsure, do not flag it.
@@ -556,20 +662,37 @@ PROMPT_HEADER
             cat "$corpus"
             printf '\n=== DIFFS JUST APPLIED ===\n'
             render_diffs "$claimed_edits" | head -c 40000
+            # Full current contents of each touched file, so the reviewer can
+            # judge the ABSENCE of required elements (e.g. a missing top-level
+            # type signature) that a diff fragment alone cannot reveal.
+            printf '\n=== FULL FILE CONTENTS (context; judge presence/absence of required elements only for definitions that appear in the diffs above) ===\n'
+            while IFS= read -r context_path; do
+                [ -z "$context_path" ] && continue
+                [ -f "$context_path" ] || continue
+                printf '\n--- %s ---\n' "$context_path"
+                head -c 40000 "$context_path"
+                printf '\n'
+            done < "$file_list"
         } > "$prompt_file"
 
-        # The 60s timeout protects against a hung subprocess blocking the turn.
-        # Skip envs so the nested reviewer never re-triggers this hook on itself.
+        # The 60s timeout protects against a hung subprocess. stderr captured and
+        # exit code kept so a broken reviewer is surfaced, not read as clean.
+        review_stderr="$state_dir/review.stderr"
         review_output=$(CLAUDE_SKIP_DUMBIFY=1 CLAUDE_SKIP_CRITIQUE=1 CLAUDE_SKIP_RULE_CHECK=1 \
-            timeout 60 claude -p --model "$reviewer_model" < "$prompt_file" 2>/dev/null || true)
+            timeout 60 claude -p $nomcp_args $readonly_tools --model "$reviewer_model" < "$prompt_file" 2>"$review_stderr")
+        review_exit=$?
 
-        rm -f "$claimed_edits"
-
-        # Non-empty output containing a VIOLATION block means findings to fix.
-        # Empty output (CLI failure, network hiccup) is treated as clean so the
-        # gate never blocks the turn on infrastructure problems.
-        if [ -n "$review_output" ] && printf '%s' "$review_output" | grep -q '^VIOLATION:'; then
-            reason="A $reviewer_model reviewer flagged possible rule violations in the diffs you just applied.
+        if nested_call_broken "$review_exit" "$review_output"; then
+            # Do not lose the diffs: return them to the stack so the next Stop
+            # re-reviews once the reviewer works again, then surface the failure.
+            cat "$claimed_edits" >> "$edits_stack" 2>/dev/null
+            rm -f "$claimed_edits"
+            surface_nested_failure "rule review" "$reviewer_model" "$review_exit" "$review_output" "$review_stderr" "$state_dir/review-broke"
+        else
+            rm -f "$claimed_edits"
+            # Non-empty output containing a VIOLATION block means findings to fix.
+            if printf '%s' "$review_output" | grep -q '^VIOLATION:'; then
+                reason="A $reviewer_model reviewer flagged possible rule violations in the diffs you just applied.
 You are the larger model and the final judge. For each finding, either:
   1. Agree: edit the file to fix it (the fix is re-reviewed automatically), or
   2. Disagree: explain to the user why the finding is wrong (the reviewer misread
@@ -581,8 +704,9 @@ Do not silently ignore findings. Set CLAUDE_SKIP_RULE_CHECK=1 to disable.
 $review_output
 --- end reviewer findings ---"
 
-            jq -n --arg reason "$reason" '{decision: "block", reason: $reason}'
-            exit 0
+                jq -n --arg reason "$reason" '{decision: "block", reason: $reason}'
+                exit 0
+            fi
         fi
     fi
 fi

@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Behaviour test for the Phase 0 (dumbify) and Phase 1 (critique) state machines
-# in stop-gate.sh. It does NOT reimplement the gate: it drives the real hook with
-# synthetic Stop-hook input and a stubbed `claude`, then asserts what the hook
-# actually emitted and wrote to its per-turn state.
+# Behaviour test for the Phase 0 (dumbify), Phase 1 (critique), and Phase A
+# (rule review) state machines in stop-gate.sh. It does NOT reimplement the gate:
+# it drives the real hook with synthetic Stop-hook input and a stubbed `claude`,
+# then asserts what the hook actually emitted and wrote to its per-turn state.
 #
 # The stub `claude` branches on the prompt it receives over stdin:
 #   "complexity canary"        -> dumbify explainer: returns a canned explanation
 #   "adversarial code critic"  -> critic: returns a canned response we control
-#   "rule-compliance reviewer" -> rule reviewer: always returns OK
+#   "rule-compliance reviewer" -> rule reviewer: returns $reviewer_response (OK
+#                                 by default) and logs the prompt it received,
+#                                 so we can assert what context the gate sent it
 # so each phase can be tested in isolation by skipping the others. The stub also
 # logs the CLAUDE_SKIP_* it was invoked with, so we can assert the recursion
 # guards.
@@ -32,20 +34,33 @@ stub_bin="$work/bin"
 mkdir -p "$stub_bin"
 critic_response="$work/critic-response.txt"
 dumbify_response="$work/dumbify-response.txt"
+reviewer_response="$work/reviewer-response.txt"
+reviewer_prompt_log="$work/reviewer-prompt.txt"
 stub_log="$work/stub-invocations.log"
+# When this file holds a phase keyword (dumbify|critique|review), the stub
+# simulates a broken nested call for that phase: it writes to stderr and exits
+# non-zero with empty stdout, so the fail-loud path can be exercised.
+stub_fail_file="$work/stub-fail"
 echo OK > "$critic_response"
+echo OK > "$reviewer_response"
 echo "This function adds two integers and returns their sum." > "$dumbify_response"
+: > "$stub_fail_file"
 
 cat > "$stub_bin/claude" <<STUB
 #!/usr/bin/env bash
 input=\$(cat)
 echo "SKIP_CRITIQUE=\${CLAUDE_SKIP_CRITIQUE:-unset} SKIP_DUMBIFY=\${CLAUDE_SKIP_DUMBIFY:-unset}" >> "$stub_log"
+fail_phase=\$(cat "$stub_fail_file" 2>/dev/null)
 if printf '%s' "\$input" | grep -q 'complexity canary'; then
+    if [ "\$fail_phase" = "dumbify" ]; then echo "stub: simulated dumbify failure" >&2; exit 1; fi
     cat "$dumbify_response"
 elif printf '%s' "\$input" | grep -q 'adversarial correctness critic'; then
+    if [ "\$fail_phase" = "critique" ]; then echo "stub: simulated critic failure" >&2; exit 1; fi
     cat "$critic_response"
 elif printf '%s' "\$input" | grep -q 'rule-compliance reviewer'; then
-    echo OK
+    printf '%s' "\$input" > "$reviewer_prompt_log"
+    if [ "\$fail_phase" = "review" ]; then echo "stub: simulated reviewer failure" >&2; exit 1; fi
+    cat "$reviewer_response"
 fi
 STUB
 chmod +x "$stub_bin/claude"
@@ -56,6 +71,8 @@ mkdir -p "$TMPDIR"
 # Isolate HOME so the gate's corpus build does not read the real CLAUDE.md.
 export HOME="$work/home"
 mkdir -p "$HOME/.claude"
+# Durable failure log at a known path so the fail-loud tests can assert on it.
+export CLAUDE_GATE_FAILURE_LOG="$work/gate-failures.log"
 
 state_dir_for() { printf '%s/claude-turn-state/%s' "$TMPDIR" "$1"; }
 
@@ -239,6 +256,79 @@ echo OK > "$critic_response"
 out=$(run_gate_tx pr3 "$tx")
 assert_absent 'verify your work' "$out" "pr3: the removed verification nudge no longer fires"
 assert_absent '"decision": "block"' "$out" "pr3: a clean critique on a tool turn ends the turn"
+
+############################################################################
+# Phase A: rule review. Dumbify and critique skipped to isolate it. Asserts
+# the reviewer prompt now carries the FULL FILE CONTENTS of each touched file
+# (so absence-of-required-text rules, e.g. a missing top-level type signature,
+# are detectable from a diff that cannot show a missing line), and that a
+# returned VIOLATION blocks the stop.
+############################################################################
+export CLAUDE_SKIP_DUMBIFY=1
+export CLAUDE_SKIP_CRITIQUE=1
+
+# === a1: rule review injects full file content and blocks on a violation ====
+printf 'classify _ = "many"  -- RULEREVIEW_SUBJECT_MARKER\n' > "$work/subject.hs"
+printf 'VIOLATION: missing top-level type signature\nRULE: "Always add type signatures to top level bindings"\nEVIDENCE: subject.hs: classify has no signature\nREASONING: no signature line present for classify\n' > "$reviewer_response"
+: > "$reviewer_prompt_log"
+seed_edit a1 hs 1
+out=$(run_gate a1)
+assert_contains '"decision": "block"' "$out" "a1: a rule violation blocks the stop"
+assert_contains 'reviewer findings' "$out" "a1: block carries the reviewer findings"
+assert_contains 'missing top-level type signature' "$out" "a1: the actual finding is forwarded"
+assert_contains 'FULL FILE CONTENTS' "$(cat "$reviewer_prompt_log")" "a1: reviewer prompt carries the full-file section"
+assert_contains 'RULEREVIEW_SUBJECT_MARKER' "$(cat "$reviewer_prompt_log")" "a1: reviewer prompt carries the touched file body"
+
+# === a2: a clean rule review (OK) does not block ============================
+echo OK > "$reviewer_response"
+seed_edit a2 hs 1
+out=$(run_gate a2)
+assert_absent '"decision": "block"' "$out" "a2: a clean rule review ends the turn"
+
+unset CLAUDE_SKIP_DUMBIFY
+unset CLAUDE_SKIP_CRITIQUE
+
+############################################################################
+# Fail-loud: a broken nested call (non-zero exit, empty output) must be
+# surfaced, not read as a clean pass. Covers the reviewer and the critic.
+############################################################################
+
+# === f1: a broken rule reviewer blocks loudly, logs, and keeps the edits =====
+export CLAUDE_SKIP_DUMBIFY=1
+export CLAUDE_SKIP_CRITIQUE=1
+: > "$CLAUDE_GATE_FAILURE_LOG"
+echo review > "$stub_fail_file"          # reviewer exits 1 with empty stdout
+seed_edit f1 hs 1
+sdir=$(state_dir_for f1)
+out=$(run_gate f1)
+assert_contains '"decision": "block"' "$out" "f1: a broken reviewer blocks the stop"
+assert_contains 'GATE INFRASTRUCTURE FAILURE' "$out" "f1: the block names it an infrastructure failure"
+assert_contains 'simulated reviewer failure' "$out" "f1: the captured stderr is forwarded"
+assert_contains 'gate nested-call failure' "$(cat "$CLAUDE_GATE_FAILURE_LOG" 2>/dev/null)" "f1: the failure is written to the durable log"
+assert_file "$sdir/edits.jsonl" "f1: the diffs are returned to the stack for re-review, not lost"
+: > "$stub_fail_file"
+
+# === f2: the loud warning fires once per turn, then lets the turn proceed =====
+echo review > "$stub_fail_file"
+sdir=$(state_dir_for f2)
+mkdir -p "$sdir"; : > "$sdir/review-broke"   # already surfaced this turn
+seed_edit f2 hs 1
+out=$(run_gate f2)
+assert_absent '"decision": "block"' "$out" "f2: an already-surfaced failure does not re-block"
+: > "$stub_fail_file"
+
+# === f3: a broken critic is surfaced loudly too =============================
+export CLAUDE_SKIP_DUMBIFY=1
+unset CLAUDE_SKIP_CRITIQUE
+: > "$CLAUDE_GATE_FAILURE_LOG"
+echo critique > "$stub_fail_file"        # critic exits 1 with empty stdout
+seed_edit f3 hs 1
+out=$(run_gate f3)
+assert_contains 'GATE INFRASTRUCTURE FAILURE' "$out" "f3: a broken critic blocks loudly"
+assert_contains 'critique' "$out" "f3: the block names the critique phase"
+: > "$stub_fail_file"
+unset CLAUDE_SKIP_DUMBIFY
+unset CLAUDE_SKIP_CRITIQUE
 
 echo
 if [ "$fails" -eq 0 ]; then
