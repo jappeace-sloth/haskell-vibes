@@ -24,8 +24,11 @@
 #   turn so the larger model fixes the code, corrects the claim, or out-evidences
 #   the critic. Running after dumbify makes the critic the last correctness gate,
 #   so it verifies the canary's refactor too; its own fixes land on the
-#   edits.jsonl stack and get rule-checked by Phase A. Bounded by
-#   CLAUDE_CRITIQUE_MAX_ROUNDS so the debate cannot loop forever.
+#   edits.jsonl stack and get rule-checked by Phase A. The critic is an advisor,
+#   not a wall: it surfaces its challenges once, and the worker can always shrug
+#   them off. Like dumbify, it converges on the edit stack (no new edits since the
+#   last challenge means the worker stood by its work, so the gate moves on); only
+#   a real fix re-triggers it, with CLAUDE_CRITIQUE_MAX_ROUNDS as a backstop.
 #
 #   Both Phase 0 and Phase 1 run a nested `claude` that may run commands, so each
 #   is launched with every gate phase disabled in its environment to stop it
@@ -427,10 +430,20 @@ fi
 # type-checker already kills the bugs a paragraph-level reviewer would catch; what
 # survives is semantic, which is exactly what a failing test pins down. Requiring
 # evidence also auto-filters confabulated "bugs": no reproducer, no finding.
+#
+# Decision: the critic is an ADVISOR, not a wall. The worker (the larger model)
+# is the final judge and must always be able to shrug a challenge off. So, exactly
+# like dumbify, convergence is OBSERVED via the edit stack rather than forced: the
+# critic surfaces its challenges once, and if the worker makes NO new edits before
+# the next Stop (it stood by its work, or rebutted the claims in prose) the gate
+# accepts that judgement and moves on. Only a real fix (new edits, so the stack
+# grows) earns a fresh critique. CLAUDE_CRITIQUE_MAX_ROUNDS stays as a backstop
+# against an edit-edit-edit loop, not as a minimum number of rounds to endure.
 
 critique_done_flag="$state_dir/critique-done"
 critique_round_file="$state_dir/critique-round"
 critique_prev="$state_dir/critique-prev"
+critique_editmark="$state_dir/critique-editmark"
 
 critique_model="${CLAUDE_CRITIQUE_MODEL:-claude-opus-4-8}"
 critique_max_rounds="${CLAUDE_CRITIQUE_MAX_ROUNDS:-2}"
@@ -452,11 +465,28 @@ if [ "${CLAUDE_SKIP_CRITIQUE:-0}" != "1" ] \
     critique_has_edits=0
     [ -s "$edits_stack" ] && critique_has_edits=1
 
+    # The stack size a previous challenge this turn was based on, used to detect a
+    # shrug. Same basis as dumbify's editmark: the hook only reads the stack here
+    # (Phase A claims it later), so the count is stable across a Stop on which the
+    # critic blocked. A missing or empty stack (a research/conversational turn)
+    # counts as 0.
+    critique_current_mark=0
+    [ -s "$edits_stack" ] && critique_current_mark=$(wc -l < "$edits_stack" | tr -d ' ')
+
     if [ "$critique_has_edits" = "0" ] && [ "$critique_touched" = "0" ]; then
         # A pure conversational turn touched nothing and ran no tools: there is
         # no action or claim grounded in work to refute. Nothing to do.
         : > "$critique_done_flag"
+    elif [ -f "$critique_editmark" ] \
+         && [ "$(cat "$critique_editmark")" = "$critique_current_mark" ]; then
+        # The critic already challenged this turn and the worker has made NO new
+        # edits since: it stood by its work, or rebutted the claims in prose. The
+        # critic is an advisor, not a wall, so a shrug ends the debate. Only new
+        # edits (a real fix) would have grown the stack and earned a re-critique.
+        : > "$critique_done_flag"
     else
+        # First critique this turn, or the worker made new edits in response that
+        # warrant a fresh look.
         # Resolve a repo so the critic can run tests and read code. Prefer the
         # first edited file's root; otherwise the gate's working directory.
         critique_first_file=$(jq -r '.tool_input.file_path // empty' "$edits_stack" 2>/dev/null | head -n 1)
@@ -568,11 +598,16 @@ CRITIQUE_HEADER
 
             if [ "$critique_round" -le "$critique_max_rounds" ]; then
                 printf '%s' "$critique_output" > "$critique_prev"
+                # Record the stack size this challenge was based on. If the worker
+                # makes no new edits before the next Stop, the editmark short
+                # circuit above reads it as a shrug and ends the debate; new edits
+                # grow the stack past this mark and earn a fresh critique.
+                printf '%s' "$critique_current_mark" > "$critique_editmark"
 
-                reason="A fresh adversarial $critique_model critic tried to prove your work wrong this turn, using tests and sources, and produced the counter-evidence below (round $critique_round of $critique_max_rounds). For each challenge, either:
+                reason="A fresh adversarial $critique_model critic tried to prove your work wrong this turn, using tests and sources, and produced the counter-evidence below (round $critique_round of $critique_max_rounds). This critic is an advisor, not a wall: you are the final judge. For each challenge, either:
   1. Agree: fix the code, or correct the claim. Code fixes are re-critiqued and rule-checked automatically.
-  2. Disagree: rebut it with STRONGER evidence than the critic brought (run the test yourself, cite a better source). Out-evidence it; do not just assert.
-Do not silently ignore a challenge. Set CLAUDE_SKIP_CRITIQUE=1 to disable this gate.
+  2. Disagree: rebut it with STRONGER evidence than the critic brought (run the test yourself, cite a better source), or simply stand by your work. Do not just assert.
+Engage every challenge, then decide. If you make no further edits, the gate takes that as your considered judgement and moves on (a shrug is allowed); it does not re-litigate. Set CLAUDE_SKIP_CRITIQUE=1 to disable this gate.
 
 --- critic challenges ---
 $critique_output
@@ -581,7 +616,8 @@ $critique_output
                 jq -n --arg reason "$reason" '{decision: "block", reason: $reason}'
                 exit 0
             fi
-            # Round cap reached: the model has engaged rounds 1..max. Stop
+            # Round cap reached: the worker kept editing through every allowed
+            # round, so the stack grew each Stop and never read as a shrug. Stop
             # debating and fall through; remaining suspicions are left for the
             # human reviewer rather than looping forever.
         fi

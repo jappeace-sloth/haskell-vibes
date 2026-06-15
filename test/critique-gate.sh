@@ -188,8 +188,33 @@ assert_contains '"decision": "block"' "$out" "c1: a demonstrable bug blocks the 
 assert_contains 'critic challenges'   "$out" "c1: block reason carries the challenges"
 assert_contains 'off-by-one'          "$out" "c1: the actual finding is forwarded"
 assert_eq "$(cat "$sdir/critique-round" 2>/dev/null)" "1" "c1: round counter is 1"
+assert_eq "$(cat "$sdir/critique-editmark" 2>/dev/null)" "1" "c1: editmark records the stack size the challenge saw"
 assert_no_file "$sdir/critique-done" "c1: critique not marked done while bugs remain"
 assert_contains 'SKIP_CRITIQUE=1' "$(cat "$stub_log")" "c1: recursion guard set on the nested critic"
+
+# === c1b: no new edits since the challenge -> shrug accepted, no re-critique ==
+# The worker rebutted in prose / stood by its work. The critic is an advisor, so
+# the gate must move on rather than force another round.
+seed_edit c1b hs 1
+sdir=$(state_dir_for c1b)
+printf '1' > "$sdir/critique-editmark"   # equals current stack size -> a shrug
+printf '1' > "$sdir/critique-round"
+printf '%s' "$challenge_block" > "$critic_response"
+out=$(run_gate c1b)
+assert_absent 'critic challenges' "$out" "c1b: a shrug (no new edits) does not re-block on the same challenge"
+assert_file "$sdir/critique-done" "c1b: critique marked done once the worker stands pat"
+assert_eq "$(cat "$sdir/critique-round" 2>/dev/null)" "1" "c1b: a shrug does not advance the round counter"
+
+# === c1c: new edits since the challenge -> a real fix earns a re-critique =====
+seed_edit c1c hs 2                       # 2 edits now
+sdir=$(state_dir_for c1c)
+printf '1' > "$sdir/critique-editmark"   # last challenge saw 1 edit -> worker fixed
+printf '1' > "$sdir/critique-round"
+printf '%s' "$challenge_block" > "$critic_response"
+out=$(run_gate c1c)
+assert_contains 'critic challenges' "$out" "c1c: new edits in response trigger a fresh critique"
+assert_eq "$(cat "$sdir/critique-round" 2>/dev/null)" "2" "c1c: round advances when the worker re-edited"
+assert_eq "$(cat "$sdir/critique-editmark" 2>/dev/null)" "2" "c1c: editmark updated to the new stack size"
 
 # === c2: critic returns OK -> no critique block, phase marked done ==========
 echo OK > "$critic_response"
