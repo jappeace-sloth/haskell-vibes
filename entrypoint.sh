@@ -10,11 +10,10 @@ chown "${CLAUDE_UID}:${CLAUDE_GID}" /home/claude /home/claude/.ssh
 chmod 755 /home/claude
 chmod 700 /home/claude/.ssh
 
-# Bind-mounted secrets land with host ownership; make sure the SSH key is
-# readable by claude.
-if [ -f /home/claude/.ssh/id_ed25519 ]; then
-    chown "${CLAUDE_UID}:${CLAUDE_GID}" /home/claude/.ssh/id_ed25519 || true
-    chmod 600 /home/claude/.ssh/id_ed25519 || true
-fi
+# The SSH key is mounted with --bind-ro, so its metadata can't be changed
+# from inside the container (chown/chmod fail with "Read-only file system").
+# It needs no fixing anyway: the host file is already mode 600 and owned by
+# the host uid, which is CLAUDE_UID inside, so ssh accepts it as-is. Don't
+# attempt the change just to swallow the guaranteed error.
 
 exec su-exec "${CLAUDE_UID}:${CLAUDE_GID}" "$@"
