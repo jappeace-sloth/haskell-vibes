@@ -95,9 +95,14 @@ launch_docker() {
     # Optional configuration mounts (skipped in vanilla mode)
     CONFIG_MOUNTS=()
     if [ "$VANILLA" -eq 0 ]; then
+        # Private per-launch copy of the gate hooks, mounted read-only instead
+        # of the live $(pwd)/hooks (see launch_nspawn for the rationale).
+        HOOKS_SNAPSHOT="$(mktemp -d)"
+        cp -a "$(pwd)/hooks/." "$HOOKS_SNAPSHOT/" 2>/dev/null || true
+        trap 'rm -rf "$HOOKS_SNAPSHOT" 2>/dev/null || true' EXIT
         CONFIG_MOUNTS+=("-v" "$(pwd)/CLAUDE.md:/home/claude/.claude/CLAUDE.md")
         CONFIG_MOUNTS+=("-v" "$(pwd)/skills:/home/claude/.claude/skills")
-        CONFIG_MOUNTS+=("-v" "$(pwd)/hooks:/home/claude/.claude/hooks:ro")
+        CONFIG_MOUNTS+=("-v" "$HOOKS_SNAPSHOT:/home/claude/.claude/hooks:ro")
     fi
 
     docker run -it \
@@ -170,16 +175,26 @@ launch_nspawn() {
         "$RUNTIME_ROOT/home/claude/character"
     touch "$RUNTIME_ROOT/home/claude/.claude.json"
 
+    # Snapshot the gate hooks into a private per-launch copy and mount THAT
+    # read-only, instead of binding the live $(pwd)/hooks. That live dir is
+    # shared by every machine launched from this checkout and can be emptied or
+    # changed on the host mid-session (a git checkout, another instance), which
+    # silently breaks the running container's gate. The snapshot lives outside
+    # the rootfs so the agent cannot reach it to edit its own gate.
+    HOOKS_SNAPSHOT="/tmp/claude-hooks.${INSTANCE_NAME}.$$"
+    mkdir -p "$HOOKS_SNAPSHOT"
+    cp -a "$(pwd)/hooks/." "$HOOKS_SNAPSHOT/" 2>/dev/null || true
+
     # Cleanup is best-effort. If nspawn left a mount-point dir or a root-owned
     # entry we can't reach, leave it — /tmp clears on reboot anyway.
-    trap 'rm -rf "$RUNTIME_ROOT" 2>/dev/null || true' EXIT
+    trap 'rm -rf "$RUNTIME_ROOT" "$HOOKS_SNAPSHOT" 2>/dev/null || true' EXIT
 
     # Vanilla mode skips the project's CLAUDE.md, skills and hooks mounts.
     CONFIG_BINDS=()
     if [ "$VANILLA" -eq 0 ]; then
         CONFIG_BINDS+=("--bind-ro=$(pwd)/CLAUDE.md:/home/claude/.claude/CLAUDE.md")
         CONFIG_BINDS+=("--bind-ro=$(pwd)/skills:/home/claude/.claude/skills")
-        CONFIG_BINDS+=("--bind-ro=$(pwd)/hooks:/home/claude/.claude/hooks")
+        CONFIG_BINDS+=("--bind-ro=$HOOKS_SNAPSHOT:/home/claude/.claude/hooks")
     fi
 
     REDDIT_SETENV=()
