@@ -92,12 +92,23 @@ launch_docker() {
         REDDIT_SECRET_ARGS=("-e" "REDDIT_USERNAME=jappeace-sloth" "-e" "REDDIT_PASSWORD=$(cat ~/.reddit_secret)")
     fi
 
+    # Private per-launch copy of the read-only config group, mounted instead of
+    # the live $(pwd) paths (see launch_nspawn for the rationale). character is
+    # mounted even in vanilla mode, so it is always snapshotted.
+    CONFIG_SNAPSHOT="/tmp/claude-config.${INSTANCE_NAME}.$$"
+    mkdir -p "$CONFIG_SNAPSHOT"
+    cp -a "$(pwd)/character" "$CONFIG_SNAPSHOT/character"
+    trap 'rm -rf "$CONFIG_SNAPSHOT" 2>/dev/null || true' EXIT
+
     # Optional configuration mounts (skipped in vanilla mode)
     CONFIG_MOUNTS=()
     if [ "$VANILLA" -eq 0 ]; then
-        CONFIG_MOUNTS+=("-v" "$(pwd)/CLAUDE.md:/home/claude/.claude/CLAUDE.md")
-        CONFIG_MOUNTS+=("-v" "$(pwd)/skills:/home/claude/.claude/skills")
-        CONFIG_MOUNTS+=("-v" "$(pwd)/hooks:/home/claude/.claude/hooks:ro")
+        cp -a "$(pwd)/CLAUDE.md" "$CONFIG_SNAPSHOT/CLAUDE.md"
+        cp -a "$(pwd)/skills" "$CONFIG_SNAPSHOT/skills"
+        cp -a "$(pwd)/hooks" "$CONFIG_SNAPSHOT/hooks"
+        CONFIG_MOUNTS+=("-v" "$CONFIG_SNAPSHOT/CLAUDE.md:/home/claude/.claude/CLAUDE.md")
+        CONFIG_MOUNTS+=("-v" "$CONFIG_SNAPSHOT/skills:/home/claude/.claude/skills")
+        CONFIG_MOUNTS+=("-v" "$CONFIG_SNAPSHOT/hooks:/home/claude/.claude/hooks:ro")
     fi
 
     docker run -it \
@@ -128,7 +139,8 @@ launch_docker() {
         -v "$(pwd)/settings.json":/home/claude/.claude/settings.json \
         "${CONFIG_MOUNTS[@]}" \
         -v "$(pwd)/../vibes/$INSTANCE_NAME":/home/claude/vibes \
-        -v "$(pwd)/character":/home/claude/character \
+        `# character is snapshotted (above) and mounted even in vanilla mode` \
+        -v "$CONFIG_SNAPSHOT/character":/home/claude/character \
         --rm \
         claude-env:latest \
         claude
@@ -170,16 +182,32 @@ launch_nspawn() {
         "$RUNTIME_ROOT/home/claude/character"
     touch "$RUNTIME_ROOT/home/claude/.claude.json"
 
+    # Snapshot the read-only config group (CLAUDE.md, skills, hooks, character)
+    # into a private per-launch copy and mount THOSE, instead of binding the
+    # live $(pwd) paths. Those dirs are shared by every machine launched from
+    # this checkout and can be emptied or changed on the host mid-session (a git
+    # checkout, another instance): a vanished stop-gate.sh silently disables the
+    # Stop gate, a swapped CLAUDE.md/skills/character changes behaviour
+    # underfoot. The snapshot lives outside the rootfs so the agent cannot reach
+    # it to edit its own gate. character is mounted even in vanilla mode, so it
+    # is always snapshotted.
+    CONFIG_SNAPSHOT="/tmp/claude-config.${INSTANCE_NAME}.$$"
+    mkdir -p "$CONFIG_SNAPSHOT"
+    cp -a "$(pwd)/character" "$CONFIG_SNAPSHOT/character"
+
     # Cleanup is best-effort. If nspawn left a mount-point dir or a root-owned
-    # entry we can't reach, leave it — /tmp clears on reboot anyway.
-    trap 'rm -rf "$RUNTIME_ROOT" 2>/dev/null || true' EXIT
+    # entry we can't reach, leave it; /tmp clears on reboot anyway.
+    trap 'rm -rf "$RUNTIME_ROOT" "$CONFIG_SNAPSHOT" 2>/dev/null || true' EXIT
 
     # Vanilla mode skips the project's CLAUDE.md, skills and hooks mounts.
     CONFIG_BINDS=()
     if [ "$VANILLA" -eq 0 ]; then
-        CONFIG_BINDS+=("--bind-ro=$(pwd)/CLAUDE.md:/home/claude/.claude/CLAUDE.md")
-        CONFIG_BINDS+=("--bind-ro=$(pwd)/skills:/home/claude/.claude/skills")
-        CONFIG_BINDS+=("--bind-ro=$(pwd)/hooks:/home/claude/.claude/hooks")
+        cp -a "$(pwd)/CLAUDE.md" "$CONFIG_SNAPSHOT/CLAUDE.md"
+        cp -a "$(pwd)/skills" "$CONFIG_SNAPSHOT/skills"
+        cp -a "$(pwd)/hooks" "$CONFIG_SNAPSHOT/hooks"
+        CONFIG_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/CLAUDE.md:/home/claude/.claude/CLAUDE.md")
+        CONFIG_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/skills:/home/claude/.claude/skills")
+        CONFIG_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/hooks:/home/claude/.claude/hooks")
     fi
 
     REDDIT_SETENV=()
@@ -209,7 +237,8 @@ launch_nspawn() {
         --bind="$(pwd)/settings.json:/home/claude/.claude/settings.json" \
         "${CONFIG_BINDS[@]}" \
         --bind="$(pwd)/../vibes/$INSTANCE_NAME:/home/claude/vibes" \
-        --bind-ro="$(pwd)/character:/home/claude/character" \
+        `# character is snapshotted (above) and mounted even in vanilla mode` \
+        --bind-ro="$CONFIG_SNAPSHOT/character:/home/claude/character" \
         --bind-ro="$HOME/.ssh/sloth:/home/claude/.ssh/id_ed25519" \
         --tmpfs=/tmp:rw,mode=1777 \
         --setenv=INSTANCE_NAME="$INSTANCE_NAME" \
