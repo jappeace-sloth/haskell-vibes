@@ -139,6 +139,7 @@ launch_docker() {
         -v "$(pwd)/settings.json":/home/claude/.claude/settings.json \
         "${CONFIG_MOUNTS[@]}" \
         -v "$(pwd)/../vibes/$INSTANCE_NAME":/home/claude/vibes \
+        `# character is snapshotted (above) and mounted even in vanilla mode` \
         -v "$CONFIG_SNAPSHOT/character":/home/claude/character \
         --rm \
         claude-env:latest \
@@ -236,6 +237,7 @@ launch_nspawn() {
         --bind="$(pwd)/settings.json:/home/claude/.claude/settings.json" \
         "${CONFIG_BINDS[@]}" \
         --bind="$(pwd)/../vibes/$INSTANCE_NAME:/home/claude/vibes" \
+        `# character is snapshotted (above) and mounted even in vanilla mode` \
         --bind-ro="$CONFIG_SNAPSHOT/character:/home/claude/character" \
         --bind-ro="$HOME/.ssh/sloth:/home/claude/.ssh/id_ed25519" \
         --tmpfs=/tmp:rw,mode=1777 \
