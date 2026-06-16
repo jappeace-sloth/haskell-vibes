@@ -196,7 +196,7 @@ launch_nspawn() {
     cp -a "$(pwd)/character" "$CONFIG_SNAPSHOT/character"
 
     # Cleanup is best-effort. If nspawn left a mount-point dir or a root-owned
-    # entry we can't reach, leave it — /tmp clears on reboot anyway.
+    # entry we can't reach, leave it; /tmp clears on reboot anyway.
     trap 'rm -rf "$RUNTIME_ROOT" "$CONFIG_SNAPSHOT" 2>/dev/null || true' EXIT
 
     # Vanilla mode skips the project's CLAUDE.md, skills and hooks mounts.
