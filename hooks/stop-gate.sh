@@ -257,33 +257,6 @@ render_diffs() {
     ' "$1"
 }
 
-# turn_touched_state TRANSCRIPT
-# Prints 1 if the assistant used any state-touching or research tool since the
-# most recent real user message, else 0. A real user message is type=="user"
-# with string content; tool replies are type=="user" with array content, which
-# is how we tell them apart.
-turn_touched_state() {
-    names=$(jq -rs '
-      ([range(length-1; -1; -1) as $i
-        | if (.[$i].type == "user" and (.[$i].message.content | type == "string"))
-          then $i else empty end] | .[0] // -1) as $idx
-      | .[$idx+1:]
-      | map(select(.type == "assistant")
-            | .message.content
-            | if type == "array"
-              then (.[] | select(.type == "tool_use") | .name)
-              else empty end)
-      | unique | .[]
-    ' "$1" 2>/dev/null)
-    while IFS= read -r tool_name; do
-        case "$tool_name" in
-            Write|Edit|MultiEdit|NotebookEdit|Bash|WebFetch|WebSearch|mcp__*)
-                printf '1'; return ;;
-        esac
-    done <<< "$names"
-    printf '0'
-}
-
 # turn_assistant_text TRANSCRIPT
 # The assistant's text (its claims and reasoning) since the most recent real
 # user message. This is the prose the critic refutes.
@@ -357,6 +330,7 @@ if [ "${CLAUDE_SKIP_DUMBIFY:-0}" != "1" ] \
         # No new edits since the last explanation: the larger model judged the
         # explanation correct and chose not to simplify. Accept and move on.
         : > "$dumbify_done_flag"
+        : > "$state_dir/dumbify-approved"   # ran and cleared, for the end-of-gate notice
     else
         dumbify_round=$(cat "$dumbify_round_file" 2>/dev/null || echo 0)
         dumbify_round=$((dumbify_round + 1))
@@ -508,9 +482,7 @@ if [ "${CLAUDE_SKIP_CRITIQUE:-0}" != "1" ] \
     # this turn. Claims come from the transcript; the diff from the edit stack
     # (which may be empty on a research/ops turn that only ran tools).
     critique_claims=""
-    critique_touched=0
     if [ -n "$transcript_path" ] && [ -f "$transcript_path" ]; then
-        critique_touched=$(turn_touched_state "$transcript_path")
         critique_claims=$(turn_assistant_text "$transcript_path" | head -c 16000)
     fi
     critique_has_edits=0
@@ -524,20 +496,18 @@ if [ "${CLAUDE_SKIP_CRITIQUE:-0}" != "1" ] \
     critique_current_mark=0
     [ -s "$edits_stack" ] && critique_current_mark=$(wc -l < "$edits_stack" | tr -d ' ')
 
-    if [ "$critique_has_edits" = "0" ] && [ "$critique_touched" = "0" ]; then
-        # A pure conversational turn touched nothing and ran no tools: there is
-        # no action or claim grounded in work to refute. Nothing to do.
-        : > "$critique_done_flag"
-    elif [ -f "$critique_editmark" ] \
-         && [ "$(cat "$critique_editmark")" = "$critique_current_mark" ]; then
+    if [ -f "$critique_editmark" ] \
+       && [ "$(cat "$critique_editmark")" = "$critique_current_mark" ]; then
         # The critic already challenged this turn and the worker has made NO new
         # edits since: it stood by its work, or rebutted the claims in prose. The
         # critic is an advisor, not a wall, so a shrug ends the debate. Only new
         # edits (a real fix) would have grown the stack and earned a re-critique.
         : > "$critique_done_flag"
     else
-        # First critique this turn, or the worker made new edits in response that
-        # warrant a fresh look.
+        # Critique runs on EVERY turn, including pure conversational ones with no
+        # edits and no touched files: the worker's claims (a fact table, a prose
+        # answer) are refutable on their own. A clean pass is silent; the
+        # editmark shrug above still terminates the debate within the turn.
         # Resolve a repo so the critic can run tests and read code. Prefer the
         # first edited file's root; otherwise the gate's working directory.
         critique_first_file=$(jq -r '.tool_input.file_path // empty' "$edits_stack" 2>/dev/null | head -n 1)
@@ -676,6 +646,15 @@ $critique_output
         # Clean (OK / empty output / round cap reached): critique is done. The
         # stack is left intact for Phase A to claim and rule-check.
         : > "$critique_done_flag"
+        # Mark approved ONLY on a genuinely clean critique: the critic ran, did
+        # not error, and produced no CHALLENGE. The round-cap fall-through (and a
+        # re-broken critic that already surfaced) also reach here with done set
+        # but leave an UNRESOLVED concern, so they must not be reported "clear"
+        # (matches dumbify, which also skips its marker at the round cap).
+        if ! nested_call_broken "$critique_exit" "$critique_output" \
+           && ! printf '%s' "$critique_output" | grep -q '^CHALLENGE:'; then
+            : > "$state_dir/critique-approved"
+        fi
     fi
 fi
 
@@ -794,6 +773,21 @@ $review_output
                 jq -n --arg reason "$reason" '{decision: "block", reason: $reason}'
                 exit 0
             fi
+            : > "$state_dir/review-approved"   # reviewer ran, no violations this turn
         fi
     fi
 fi
+
+# Every phase that ran this turn concluded without blocking (a block would have
+# exited above). Emit one non-blocking, user-visible confirmation naming the
+# phases that ran and cleared. The markers are per-turn (reset on the next user
+# prompt) and persist across the turn's Stops, so the final Stop reports the
+# full set. systemMessage is shown to the user and is NOT added to model context.
+gate_cleared=""
+[ -f "$state_dir/dumbify-approved" ]  && gate_cleared="$gate_cleared dumbify"
+[ -f "$state_dir/critique-approved" ] && gate_cleared="$gate_cleared critique"
+[ -f "$state_dir/review-approved" ]   && gate_cleared="$gate_cleared rules"
+if [ -n "$gate_cleared" ]; then
+    jq -n --arg msg "gate clear:$gate_cleared" '{systemMessage: $msg}'
+fi
+exit 0
