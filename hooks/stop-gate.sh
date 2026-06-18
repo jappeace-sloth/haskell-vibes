@@ -330,6 +330,7 @@ if [ "${CLAUDE_SKIP_DUMBIFY:-0}" != "1" ] \
         # No new edits since the last explanation: the larger model judged the
         # explanation correct and chose not to simplify. Accept and move on.
         : > "$dumbify_done_flag"
+        : > "$state_dir/dumbify-approved"   # ran and cleared, for the end-of-gate notice
     else
         dumbify_round=$(cat "$dumbify_round_file" 2>/dev/null || echo 0)
         dumbify_round=$((dumbify_round + 1))
@@ -645,6 +646,7 @@ $critique_output
         # Clean (OK / empty output / round cap reached): critique is done. The
         # stack is left intact for Phase A to claim and rule-check.
         : > "$critique_done_flag"
+        : > "$state_dir/critique-approved"   # critic ran, no surviving challenge
     fi
 fi
 
@@ -763,6 +765,21 @@ $review_output
                 jq -n --arg reason "$reason" '{decision: "block", reason: $reason}'
                 exit 0
             fi
+            : > "$state_dir/review-approved"   # reviewer ran, no violations this turn
         fi
     fi
 fi
+
+# Every phase that ran this turn concluded without blocking (a block would have
+# exited above). Emit one non-blocking, user-visible confirmation naming the
+# phases that ran and cleared. The markers are per-turn (reset on the next user
+# prompt) and persist across the turn's Stops, so the final Stop reports the
+# full set. systemMessage is shown to the user and is NOT added to model context.
+gate_cleared=""
+[ -f "$state_dir/dumbify-approved" ]  && gate_cleared="$gate_cleared dumbify"
+[ -f "$state_dir/critique-approved" ] && gate_cleared="$gate_cleared critique"
+[ -f "$state_dir/review-approved" ]   && gate_cleared="$gate_cleared rules"
+if [ -n "$gate_cleared" ]; then
+    jq -n --arg msg "gate clear:$gate_cleared" '{systemMessage: $msg}'
+fi
+exit 0
