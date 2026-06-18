@@ -251,33 +251,6 @@ render_diffs() {
     ' "$1"
 }
 
-# turn_touched_state TRANSCRIPT
-# Prints 1 if the assistant used any state-touching or research tool since the
-# most recent real user message, else 0. A real user message is type=="user"
-# with string content; tool replies are type=="user" with array content, which
-# is how we tell them apart.
-turn_touched_state() {
-    names=$(jq -rs '
-      ([range(length-1; -1; -1) as $i
-        | if (.[$i].type == "user" and (.[$i].message.content | type == "string"))
-          then $i else empty end] | .[0] // -1) as $idx
-      | .[$idx+1:]
-      | map(select(.type == "assistant")
-            | .message.content
-            | if type == "array"
-              then (.[] | select(.type == "tool_use") | .name)
-              else empty end)
-      | unique | .[]
-    ' "$1" 2>/dev/null)
-    while IFS= read -r tool_name; do
-        case "$tool_name" in
-            Write|Edit|MultiEdit|NotebookEdit|Bash|WebFetch|WebSearch|mcp__*)
-                printf '1'; return ;;
-        esac
-    done <<< "$names"
-    printf '0'
-}
-
 # turn_assistant_text TRANSCRIPT
 # The assistant's text (its claims and reasoning) since the most recent real
 # user message. This is the prose the critic refutes.
@@ -502,9 +475,7 @@ if [ "${CLAUDE_SKIP_CRITIQUE:-0}" != "1" ] \
     # this turn. Claims come from the transcript; the diff from the edit stack
     # (which may be empty on a research/ops turn that only ran tools).
     critique_claims=""
-    critique_touched=0
     if [ -n "$transcript_path" ] && [ -f "$transcript_path" ]; then
-        critique_touched=$(turn_touched_state "$transcript_path")
         critique_claims=$(turn_assistant_text "$transcript_path" | head -c 16000)
     fi
     critique_has_edits=0
@@ -518,20 +489,18 @@ if [ "${CLAUDE_SKIP_CRITIQUE:-0}" != "1" ] \
     critique_current_mark=0
     [ -s "$edits_stack" ] && critique_current_mark=$(wc -l < "$edits_stack" | tr -d ' ')
 
-    if [ "$critique_has_edits" = "0" ] && [ "$critique_touched" = "0" ]; then
-        # A pure conversational turn touched nothing and ran no tools: there is
-        # no action or claim grounded in work to refute. Nothing to do.
-        : > "$critique_done_flag"
-    elif [ -f "$critique_editmark" ] \
-         && [ "$(cat "$critique_editmark")" = "$critique_current_mark" ]; then
+    if [ -f "$critique_editmark" ] \
+       && [ "$(cat "$critique_editmark")" = "$critique_current_mark" ]; then
         # The critic already challenged this turn and the worker has made NO new
         # edits since: it stood by its work, or rebutted the claims in prose. The
         # critic is an advisor, not a wall, so a shrug ends the debate. Only new
         # edits (a real fix) would have grown the stack and earned a re-critique.
         : > "$critique_done_flag"
     else
-        # First critique this turn, or the worker made new edits in response that
-        # warrant a fresh look.
+        # Critique runs on EVERY turn, including pure conversational ones with no
+        # edits and no touched files: the worker's claims (a fact table, a prose
+        # answer) are refutable on their own. A clean pass is silent; the
+        # editmark shrug above still terminates the debate within the turn.
         # Resolve a repo so the critic can run tests and read code. Prefer the
         # first edited file's root; otherwise the gate's working directory.
         critique_first_file=$(jq -r '.tool_input.file_path // empty' "$edits_stack" 2>/dev/null | head -n 1)
