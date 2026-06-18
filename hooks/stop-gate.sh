@@ -646,7 +646,15 @@ $critique_output
         # Clean (OK / empty output / round cap reached): critique is done. The
         # stack is left intact for Phase A to claim and rule-check.
         : > "$critique_done_flag"
-        : > "$state_dir/critique-approved"   # critic ran, no surviving challenge
+        # Mark approved ONLY on a genuinely clean critique: the critic ran, did
+        # not error, and produced no CHALLENGE. The round-cap fall-through (and a
+        # re-broken critic that already surfaced) also reach here with done set
+        # but leave an UNRESOLVED concern, so they must not be reported "clear"
+        # (matches dumbify, which also skips its marker at the round cap).
+        if ! nested_call_broken "$critique_exit" "$critique_output" \
+           && ! printf '%s' "$critique_output" | grep -q '^CHALLENGE:'; then
+            : > "$state_dir/critique-approved"
+        fi
     fi
 fi
 
