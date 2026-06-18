@@ -81,6 +81,12 @@ claimed_edits="$state_dir/edits.processing"
 # main-loop model is still the final judge of every finding.
 reviewer_model="claude-sonnet-4-6"
 
+# Timeout (seconds) for the Phase A rule-review subprocess. Configurable like
+# the dumbify/critique gates, with a higher default than the old hardcoded 60:
+# a diff that violates many rules makes the reviewer emit a long findings list,
+# whose generation time alone can brush past 60s and get killed (exit 124).
+rule_review_timeout="${CLAUDE_RULE_REVIEW_TIMEOUT:-150}"
+
 # Args for the two read-only reviewers (Phase 0 canary, Phase A rule review).
 # Neither uses MCP, so we skip the MCP server health-check spawns
 # (hoogle/playwright/tmux registered in ~/.claude.json) that otherwise cost
@@ -725,11 +731,11 @@ PROMPT_HEADER
             done < "$file_list"
         } > "$prompt_file"
 
-        # The 60s timeout protects against a hung subprocess. stderr captured and
+        # The timeout protects against a hung subprocess. stderr captured and
         # exit code kept so a broken reviewer is surfaced, not read as clean.
         review_stderr="$state_dir/review.stderr"
         review_output=$(CLAUDE_SKIP_DUMBIFY=1 CLAUDE_SKIP_CRITIQUE=1 CLAUDE_SKIP_RULE_CHECK=1 \
-            timeout 60 claude -p $nomcp_args $readonly_tools --model "$reviewer_model" < "$prompt_file" 2>"$review_stderr")
+            timeout "$rule_review_timeout" claude -p $nomcp_args $readonly_tools --model "$reviewer_model" < "$prompt_file" 2>"$review_stderr")
         review_exit=$?
 
         if nested_call_broken "$review_exit" "$review_output"; then
