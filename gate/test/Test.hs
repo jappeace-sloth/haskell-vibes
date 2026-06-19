@@ -1,10 +1,12 @@
 module Main (main) where
 
 import Data.Aeson (Result (Success), Value, eitherDecode, eitherDecodeStrict, encode, fromJSON, toJSON)
+import Data.ByteString.Lazy qualified as LazyByteString
 import Data.ByteString.Char8 qualified as ByteString
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Gate.Corpus (selectSkills)
+import Gate.Critique (critiqueDiffBlock)
 import Gate.DiffRender (renderDiffs)
 import Gate.Edit (Edit (..), Replacement (..), editFilePath, parseEditFromTool)
 import Gate.RecordEdit (SkipReason (..), pathSkipReason)
@@ -32,6 +34,7 @@ tests =
     , violationTests
     , editRoundTripTests
     , editPropertyTests
+    , critiqueDiffTests
     ]
 
 -- The critique claims-extraction end to end: write a transcript file and ask the
@@ -144,6 +147,35 @@ editRoundTripTests =
         reloaded <- reencode edit
         assertBool "content under --- new content ---" (Text.isInfixOf "--- new content ---\nhello body" (renderDiffs [reloaded]))
     ]
+
+-- The critic runs on every turn, including conversational ones with no edits. On
+-- such a turn there is no review stack on disk, so the diff block must come back
+-- as the placeholder WITHOUT reading (and crashing on) the absent stack file.
+-- This is the regression: the old code read the stack unconditionally and died on
+-- a missing edits.jsonl, which silently killed the whole critique phase.
+
+critiqueDiffTests :: TestTree
+critiqueDiffTests =
+  testGroup
+    "critiqueDiffBlock"
+    [ testCase "a no-edit turn yields the placeholder without touching the stack" $ do
+        block <- critiqueDiffBlock False "/no/such/edits.jsonl"
+        block @?= "(no file edits this turn)"
+    , testCase "an edited turn renders the recorded diff" $ do
+        edit <- parsedEdit "Edit" "{\"file_path\":\"src/Foo.hs\",\"old_string\":\"old line\",\"new_string\":\"new line\"}"
+        stackPath <- writeStack "critique-edits" [edit]
+        block <- critiqueDiffBlock True stackPath
+        assertBool "new text appears in the diff block" (Text.isInfixOf "new line" block)
+    ]
+
+-- | Write edits to a stack file in the one-JSON-per-line form record-edit uses,
+-- so the reader under test sees exactly what production writes.
+writeStack :: String -> [Edit] -> IO FilePath
+writeStack name edits = do
+  tmp <- getTemporaryDirectory
+  let path = tmp </> ("vibes-gate-test-" <> name <> ".jsonl")
+  LazyByteString.writeFile path (LazyByteString.intercalate "\n" (map encode edits))
+  pure path
 
 parsedEdit :: Text -> ByteString.ByteString -> IO Edit
 parsedEdit tool inputJson = case eitherDecodeStrict inputJson of
