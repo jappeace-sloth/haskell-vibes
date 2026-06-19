@@ -1,9 +1,7 @@
--- | The two prompts the Stop gate produces: the Phase A rule-review prompt sent
--- to a smaller reviewer model, and the Phase B verification nudge fed back to
--- the main-loop model. Also the parsing of the reviewer's reply.
+-- | The Phase A rule-review prompt and the parsing of the reviewer's reply.
 --
 -- Keeping the prompt text here, separate from the orchestration in
--- "Gate.StopGate", makes the wording easy to find and edit without wading
+-- "Gate.RuleReview", makes the wording easy to find and edit without wading
 -- through control flow.
 module Gate.ReviewPrompt
   ( reviewerModel
@@ -11,8 +9,6 @@ module Gate.ReviewPrompt
   , maxDiffPromptChars
   , hasViolations
   , reviewBlockReason
-  , reviewerFailedReason
-  , verifyReason
   ) where
 
 import Data.Text (Text)
@@ -31,14 +27,18 @@ reviewerModel = "claude-sonnet-4-6"
 maxDiffPromptChars :: Int
 maxDiffPromptChars = 40_000
 
--- | Assemble the reviewer prompt from the rules corpus and the rendered diffs.
-buildReviewPrompt :: Text -> Text -> Text
-buildReviewPrompt corpus renderedDiffs =
+-- | Assemble the reviewer prompt from the rules corpus, the rendered diffs, and
+-- the full current contents of the touched files (so the reviewer can judge the
+-- absence of required elements that a diff fragment cannot show).
+buildReviewPrompt :: Text -> Text -> Text -> Text
+buildReviewPrompt corpus renderedDiffs fullFiles =
   Text.concat
     [ reviewPromptHeader
     , corpus
     , "\n=== DIFFS JUST APPLIED ===\n"
     , Text.take maxDiffPromptChars renderedDiffs
+    , "\n=== FULL FILE CONTENTS (context; judge presence/absence of required elements only for definitions that appear in the diffs above) ===\n"
+    , fullFiles
     ]
 
 reviewPromptHeader :: Text
@@ -59,6 +59,13 @@ reviewPromptHeader =
   \- Only flag text that appears in a \"--- with ---\", \"--- new content ---\" or\n\
   \  \"--- new source ---\" section: that is what the agent actually wrote. Do not\n\
   \  flag text in a \"--- replaced ---\" section; that is the old text being removed.\n\
+  \- A violation can also be the ABSENCE of required text. For rules of the form\n\
+  \  \"always do X\" / \"every Y must have Z\" (e.g. \"always add a top-level type\n\
+  \  signature to every top-level binding\"), a diff fragment cannot show a missing\n\
+  \  line. So for any top-level definition that appears in the diffs (added or\n\
+  \  modified this turn), consult the FULL FILE CONTENTS section below to check\n\
+  \  whether the required element is present; if it is missing, flag it. Apply this\n\
+  \  ONLY to definitions that appear in the diffs, never to untouched code.\n\
   \- Do NOT flag stylistic preferences that are not stated in the rules.\n\
   \- Do NOT flag judgement calls or things that \"might be better\".\n\
   \- If you are unsure, do not flag it.\n\
@@ -82,13 +89,11 @@ reviewPromptHeader =
   \\n\
   \=== RULES ===\n"
 
--- | A reviewer reply reports violations when it is non-empty and contains at
--- least one line beginning with @VIOLATION:@. Empty output (a CLI failure or
--- network hiccup) is treated as clean so the gate never blocks on infra.
+-- | A reviewer reply reports violations when it contains at least one line
+-- beginning with @VIOLATION:@.
 hasViolations :: Text -> Bool
 hasViolations reviewOutput =
-  not (Text.null (Text.strip reviewOutput))
-    && any ("VIOLATION:" `Text.isPrefixOf`) (Text.lines reviewOutput)
+  any ("VIOLATION:" `Text.isPrefixOf`) (Text.lines reviewOutput)
 
 -- | The block reason shown to the main-loop model when the reviewer flags
 -- something. It frames the model as the final judge: fix or rebut, never
@@ -107,29 +112,3 @@ reviewBlockReason reviewOutput =
     , reviewOutput
     , "\n--- end reviewer findings ---"
     ]
-
--- | Shown to the main-loop model when the reviewer could not produce a verdict
--- (timeout, missing claude CLI, spawn error). Surfaced rather than silently
--- treated as a clean pass, so the turn is not trusted on an unchecked diff.
-reviewerFailedReason :: Text -> Text
-reviewerFailedReason detail =
-  Text.concat
-    [ "GATE INFRASTRUCTURE FAILURE: the ", reviewerModel, " rule reviewer could not run, so the "
-    , "diffs you applied this turn were NOT rule-checked. This is surfaced rather than silently "
-    , "passed off as clean. Find out why before trusting the turn (timeout, missing claude CLI, "
-    , "auth, model error). Set CLAUDE_SKIP_RULE_CHECK=1 to disable.\n\n--- detail ---\n"
-    , detail
-    ]
-
--- | The Phase B verification nudge. This is the final prompt of the turn: review
--- has already passed by the time the gate emits it.
-verifyReason :: Text
-verifyReason =
-  "Before ending this turn, verify your work through external observation, not introspection. \
-  \You have tools. Use them. Saying \"it should work\" is not verification; demonstrating \"I ran X and observed Y\" is. \
-  \Prefer the most authoritative evidence you can obtain. Evidence is not equal: \
-  \a compiler or type-checker error, a failing test, a non-zero exit code, or a process the machine actually executed are extremely trustworthy, because the tool cannot misreport them. \
-  \A document, comment, README or status note on disk is weak evidence: it states what someone intended, not what is true now, and much of it was written by an AI (jappeace-sloth) so it may be confidently wrong. \
-  \If a more authoritative tool can settle the question, use it rather than citing a weaker source: run the type-checker, run the test, run the command and read its exit code, instead of quoting prose that claims the work is done. \
-  \If you have already verified this way and reported it, end the turn. \
-  \Otherwise verify now and report what you observed and how authoritative that observation is."

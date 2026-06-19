@@ -1,19 +1,14 @@
--- | Decide whether a turn did anything worth verifying, by reading the session
--- transcript.
+-- | Extract the assistant's claims this turn from the session transcript.
 --
 -- The transcript is JSON Lines. A real user message is @type == "user"@ with a
 -- /string/ content; a tool reply is also @type == "user"@ but with an /array/
--- content, which is how the two are told apart. We look at every assistant
--- tool call made since the most recent real user message and report whether any
--- of them touched state (edited files, ran a command, fetched the web, or
--- called an MCP tool). That is the signal the Stop gate uses to ask for
--- verification.
+-- content, which is how the two are told apart. The critique phase refutes the
+-- prose the assistant produced since the most recent real user message, so we
+-- collect the text blocks of every assistant entry after that point.
 module Gate.Transcript
   ( TranscriptLine(..)
   , classifyLine
-  , toolsSinceLastUserPrompt
-  , isStateTouching
-  , turnTouchedState
+  , turnAssistantText
   ) where
 
 import Data.Aeson (Value (Array, Object, String))
@@ -22,23 +17,22 @@ import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString.Char8 qualified as ByteString
 import Data.Foldable (toList)
-import Data.List (nub)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import System.Directory (doesFileExist)
 
--- | One transcript entry, reduced to what the gate cares about: was it a real
--- user prompt, an assistant turn that called tools, or neither.
+-- | One transcript entry, reduced to what the critique cares about: a real user
+-- prompt (the boundary), an assistant turn with its text blocks, or neither.
 data TranscriptLine
   = RealUserPrompt
-  | AssistantToolUses [Text]
+  | AssistantText [Text]
   | OtherLine
   deriving stock (Eq, Show)
 
 -- | Classify a decoded transcript entry. Anything that is not a string-content
--- user message or an array-content assistant message is OtherLine; that is the
--- genuine meaning of "an entry we do not care about", not a swallowed parse
--- error (malformed JSON never reaches here, see 'readLines').
+-- user message or an assistant message is OtherLine; that is the genuine meaning
+-- of "an entry we do not care about", not a swallowed parse error (malformed
+-- JSON never reaches here, see 'readLines').
 classifyLine :: Value -> TranscriptLine
 classifyLine value = case lookupKey "type" value of
   Just (String "user") -> userLine (messageContent value)
@@ -54,7 +48,7 @@ classifyLine value = case lookupKey "type" value of
   Nothing -> OtherLine
 
 -- | A user entry is a real prompt only when its content is a string; an array
--- content is a tool result, which does not count.
+-- content is a tool result, which does not count as a turn boundary.
 userLine :: Maybe Value -> TranscriptLine
 userLine = \case
   Just (String _userText) -> RealUserPrompt
@@ -65,12 +59,13 @@ userLine = \case
   Just Aeson.Null -> OtherLine
   Nothing -> OtherLine
 
--- | An assistant entry contributes its tool-use names when its content is the
--- array of content blocks; any other content shape contributes nothing.
+-- | An assistant entry contributes its text blocks. Array content is the list of
+-- content blocks (we keep the @text@ ones); a bare string content is itself the
+-- text.
 assistantLine :: Maybe Value -> TranscriptLine
 assistantLine = \case
-  Just (Array items) -> AssistantToolUses (collectToolUseNames (toList items))
-  Just (String _) -> OtherLine
+  Just (Array items) -> AssistantText (collectTextBlocks (toList items))
+  Just (String text) -> AssistantText [text]
   Just (Object _) -> OtherLine
   Just (Aeson.Number _) -> OtherLine
   Just (Aeson.Bool _) -> OtherLine
@@ -80,12 +75,12 @@ assistantLine = \case
 messageContent :: Value -> Maybe Value
 messageContent value = lookupKey "message" value >>= lookupKey "content"
 
-collectToolUseNames :: [Value] -> [Text]
-collectToolUseNames items =
-  [ name
+collectTextBlocks :: [Value] -> [Text]
+collectTextBlocks items =
+  [ text
   | item <- items
-  , lookupKey "type" item == Just (String "tool_use")
-  , Just (String name) <- [lookupKey "name" item]
+  , lookupKey "type" item == Just (String "text")
+  , Just (String text) <- [lookupKey "text" item]
   ]
 
 lookupKey :: Text -> Value -> Maybe Value
@@ -97,11 +92,22 @@ lookupKey key value = case value of
   Aeson.Bool _ -> Nothing
   Aeson.Null -> Nothing
 
--- | The deduplicated tool names called after the most recent real user prompt.
--- If there is no real user prompt in the transcript, all lines count, matching
--- the shell hook's default of scanning from the start.
-toolsSinceLastUserPrompt :: [TranscriptLine] -> [Text]
-toolsSinceLastUserPrompt = nub . concatMap toolNamesOf . linesAfterLastUserPrompt
+-- | The assistant's text since the most recent real user message, joined with
+-- newlines. This is the prose the critic refutes. A missing transcript is empty.
+turnAssistantText :: FilePath -> IO Text
+turnAssistantText path = do
+  present <- doesFileExist path
+  if not present
+    then pure ""
+    else do
+      transcriptLines <- readLines path
+      pure (Text.intercalate "\n" (concatMap assistantTextsOf (linesAfterLastUserPrompt transcriptLines)))
+
+assistantTextsOf :: TranscriptLine -> [Text]
+assistantTextsOf = \case
+  RealUserPrompt -> []
+  AssistantText texts -> texts
+  OtherLine -> []
 
 -- | The suffix of lines following the last real user prompt. Implemented by
 -- reversing, taking lines up to the first prompt from the end, then reversing
@@ -113,36 +119,8 @@ linesAfterLastUserPrompt = reverse . takeWhile (not . isRealUserPrompt) . revers
 isRealUserPrompt :: TranscriptLine -> Bool
 isRealUserPrompt = \case
   RealUserPrompt -> True
-  AssistantToolUses _ -> False
+  AssistantText _ -> False
   OtherLine -> False
-
-toolNamesOf :: TranscriptLine -> [Text]
-toolNamesOf = \case
-  RealUserPrompt -> []
-  AssistantToolUses names -> names
-  OtherLine -> []
-
--- | Whether a tool call counts as touching state worth reporting on. State
--- mutators and research tools both qualify; every MCP tool (@mcp__*@) is
--- side-effecting or research-style, so it qualifies too.
-isStateTouching :: Text -> Bool
-isStateTouching name =
-  name `elem` stateTouchingTools || "mcp__" `Text.isPrefixOf` name
-
-stateTouchingTools :: [Text]
-stateTouchingTools =
-  ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "WebFetch", "WebSearch"]
-
--- | Read the transcript file and report whether the current turn touched state.
--- A missing transcript means nothing to verify.
-turnTouchedState :: FilePath -> IO Bool
-turnTouchedState path = do
-  present <- doesFileExist path
-  if present
-    then do
-      transcriptLines <- readLines path
-      pure (any isStateTouching (toolsSinceLastUserPrompt transcriptLines))
-    else pure False
 
 -- | Parse the transcript file into classified lines. Blank lines and lines that
 -- are not valid JSON classify as OtherLine; the transcript is appended to live

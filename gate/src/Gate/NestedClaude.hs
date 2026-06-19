@@ -1,0 +1,163 @@
+-- | Running a nested @claude -p@ reviewer and surfacing its failures loudly.
+--
+-- Each Stop-gate phase shells out to a fresh @claude@ to review the turn. Two
+-- rules from the shell gate are preserved here. First, the nested call is launched
+-- with every gate phase disabled in its environment, so its own hooks cannot
+-- re-enter this gate. Second, the gate FAILS LOUD: a reviewer that timed out,
+-- crashed, or returned nothing is not read as a clean pass. It is logged and, on
+-- its first occurrence this turn, blocks the Stop with a descriptive reason.
+module Gate.NestedClaude
+  ( Reviewer(..)
+  , NestedResult(..)
+  , runNested
+  , surfaceNestedFailure
+  ) where
+
+import Control.Exception.Safe (displayException, tryAny)
+import Control.Monad (unless)
+import Data.ByteString.Lazy qualified as LazyByteString
+import Data.Maybe (fromMaybe)
+import Data.Text (Text)
+import Data.Text qualified as Text
+import Data.Text.Encoding (decodeUtf8Lenient, encodeUtf8)
+import Gate.HookProtocol (BlockReason (BlockReason), blockAndExit)
+import Gate.TurnState (flagExists, writeFlag)
+import System.Directory (createDirectoryIfMissing)
+import System.Environment (getEnvironment, lookupEnv)
+import System.Exit (ExitCode (ExitFailure, ExitSuccess))
+import System.FilePath (takeDirectory)
+import System.Process.Typed (byteStringInput, proc, readProcess, setEnv, setStdin, setWorkingDir)
+
+-- | How to launch one nested reviewer. A read-only reviewer (the dumbify canary
+-- and the rule reviewer) gets MCP disabled and only Read/Grep/Glob, skipping the
+-- MCP cold-start cost; the critic is deliberately given neither, so it has full
+-- tools to gather counter-evidence.
+data Reviewer = Reviewer
+  { reviewerModel :: Text
+  , reviewerReadOnly :: Bool
+  , reviewerTimeoutSecs :: Int
+  , reviewerWorkdir :: Maybe FilePath
+  }
+
+-- | The outcome of a nested call. NestedBroken carries the exit code, whether
+-- stdout was empty, and the captured stderr, so a failure can be described.
+data NestedResult
+  = NestedBroken Int Bool Text
+  | NestedOutput Text
+
+-- | Run @timeout N claude -p ... --model M@ feeding the prompt on stdin. The
+-- timeout binary kills a hung reviewer (exit 124). A non-zero exit, an empty
+-- stdout, or a spawn exception all count as broken.
+runNested :: Reviewer -> Text -> IO NestedResult
+runNested reviewer prompt = do
+  baseEnv <- getEnvironment
+  let configure =
+        setStdin (byteStringInput (LazyByteString.fromStrict (encodeUtf8 prompt)))
+          . setEnv (guardEnv baseEnv)
+          . maybe id setWorkingDir (reviewerWorkdir reviewer)
+      reviewerProcess = configure (proc "timeout" (timeoutArgs reviewer))
+  outcome <- tryAny (readProcess reviewerProcess)
+  pure $ case outcome of
+    Left err -> NestedBroken 1 True (Text.pack (displayException err))
+    Right (exitCode, out, errOut) -> interpret exitCode (decodeLazy out) (decodeLazy errOut)
+
+interpret :: ExitCode -> Text -> Text -> NestedResult
+interpret exitCode out err
+  | nestedBroken exitCode out = NestedBroken (exitNumber exitCode) (emptyOutput out) err
+  | otherwise = NestedOutput out
+
+-- | Mirrors the shell @nested_call_broken@: a non-zero exit, or exit 0 with no
+-- usable stdout, is broken; a reviewer that answered (even "OK") is not.
+nestedBroken :: ExitCode -> Text -> Bool
+nestedBroken ExitSuccess out = emptyOutput out
+nestedBroken (ExitFailure _) _ = True
+
+emptyOutput :: Text -> Bool
+emptyOutput = Text.null . Text.strip
+
+exitNumber :: ExitCode -> Int
+exitNumber ExitSuccess = 0
+exitNumber (ExitFailure n) = n
+
+timeoutArgs :: Reviewer -> [String]
+timeoutArgs reviewer =
+  [show (reviewerTimeoutSecs reviewer), "claude", "-p"]
+    <> (if reviewerReadOnly reviewer then readOnlyArgs else [])
+    <> ["--model", Text.unpack (reviewerModel reviewer)]
+
+readOnlyArgs :: [String]
+readOnlyArgs = ["--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "--tools", "Read", "Grep", "Glob"]
+
+-- | Disable every gate phase in the nested reviewer's environment so its own
+-- Stop hook cannot recurse into this gate.
+guardEnv :: [(String, String)] -> [(String, String)]
+guardEnv base =
+  upsert "CLAUDE_SKIP_DUMBIFY" "1"
+    (upsert "CLAUDE_SKIP_CRITIQUE" "1" (upsert "CLAUDE_SKIP_RULE_CHECK" "1" base))
+
+upsert :: String -> String -> [(String, String)] -> [(String, String)]
+upsert key value environment = (key, value) : filter ((/= key) . fst) environment
+
+decodeLazy :: LazyByteString.ByteString -> Text
+decodeLazy = decodeUtf8Lenient . LazyByteString.toStrict
+
+-- | Log a broken nested call, and on its first occurrence this turn block the
+-- Stop with a loud reason (then exit). On later occurrences it only logs and
+-- returns, so a permanently broken CLI surfaces once but does not wedge the turn.
+surfaceNestedFailure :: Text -> Text -> Text -> Int -> Bool -> Text -> FilePath -> IO ()
+surfaceNestedFailure session phase model exitCode emptyOut stderrText warnFlag = do
+  appendFailureLog session phase model detail stderrText
+  alreadyWarned <- flagExists warnFlag
+  unless alreadyWarned $ do
+    writeFlag warnFlag
+    blockAndExit (BlockReason (failureReason phase model detail stderrText))
+  where
+    detail = failureDetail exitCode emptyOut
+
+failureDetail :: Int -> Bool -> Text
+failureDetail exitCode emptyOut =
+  "exit=" <> Text.pack (show exitCode)
+    <> (if exitCode == 124 then " (timed out)" else "")
+    <> (if emptyOut then ", empty output" else "")
+
+failureReason :: Text -> Text -> Text -> Text -> Text
+failureReason phase model detail stderrText =
+  Text.concat
+    [ "GATE INFRASTRUCTURE FAILURE in the ", phase, " phase: the nested ", model
+    , " call returned no usable result (", detail, "), so this turn was NOT checked "
+    , "by that phase. Find out why the reviewer could not run (timeout, auth, MCP, "
+    , "model error) before trusting this turn. This loud warning fires once per turn; "
+    , "you may continue after acknowledging it.\nLast stderr lines:\n"
+    , stderrTail stderrText
+    ]
+
+stderrTail :: Text -> Text
+stderrTail = Text.unlines . lastN 20 . Text.lines
+
+lastN :: Int -> [a] -> [a]
+lastN n xs = drop (length xs - n) xs
+
+-- | Append a failure record to the durable log outside the per-turn state dir
+-- (so it survives the per-prompt reset), overridable via CLAUDE_GATE_FAILURE_LOG.
+appendFailureLog :: Text -> Text -> Text -> Text -> Text -> IO ()
+appendFailureLog session phase model detail stderrText = do
+  path <- failureLogPath
+  createDirectoryIfMissing True (takeDirectory path)
+  appendFile path $
+    Text.unpack $
+      Text.concat
+        [ "=== gate nested-call failure: phase=", phase, " model=", model, " ", detail, " ===\n"
+        , "session=", session, "\n"
+        , "--- stderr (last 20 lines) ---\n"
+        , stderrTail stderrText
+        , "\n"
+        ]
+
+failureLogPath :: IO FilePath
+failureLogPath = do
+  override <- lookupEnv "CLAUDE_GATE_FAILURE_LOG"
+  case override of
+    Just path -> pure path
+    Nothing -> do
+      home <- lookupEnv "HOME"
+      pure (fromMaybe "/tmp" home <> "/.claude/gate-failures.log")

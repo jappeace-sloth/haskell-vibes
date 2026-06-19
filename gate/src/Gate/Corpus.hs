@@ -14,11 +14,9 @@ import Data.List (isSuffixOf, nub, sort)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as TextIO
-import Data.ByteString.Lazy.Char8 qualified as LazyChar8
+import Gate.Repo (gitRoot)
 import System.Directory (doesFileExist, getHomeDirectory)
-import System.Exit (ExitCode (ExitFailure, ExitSuccess))
 import System.FilePath (takeDirectory, (</>))
-import System.Process.Typed (proc, readProcess)
 
 -- | Skill names whose rules are relevant to the touched file types, sorted and
 -- deduplicated. Pure so the mapping can be tested directly.
@@ -85,16 +83,3 @@ fileSection heading path = do
       pure ["\n" <> heading <> "\n" <> body]
     else pure []
 
--- | The git work tree root containing a directory, or Nothing if it is not in a
--- repository.
-gitRoot :: FilePath -> IO (Maybe FilePath)
-gitRoot dir = do
-  (exitCode, out, _err) <- readProcess (proc "git" ["-C", dir, "rev-parse", "--show-toplevel"])
-  pure $ case LazyChar8.lines out of
-    (root : _) | isSuccess exitCode && not (LazyChar8.null root) -> Just (LazyChar8.unpack root)
-    _noRoot -> Nothing
-
-isSuccess :: ExitCode -> Bool
-isSuccess = \case
-  ExitSuccess -> True
-  ExitFailure _ -> False

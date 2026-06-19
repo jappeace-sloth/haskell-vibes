@@ -1,15 +1,17 @@
 -- | The JSON protocol Claude Code uses to talk to hook commands.
 --
--- A hook reads one JSON object from stdin describing the event, and a Stop or
--- PostToolUse hook may write one JSON object to stdout to influence the turn.
--- This module models just the fields the gate needs from the input, and the
--- single output shape it ever emits: a @decision: block@ with a reason that is
--- fed back to the main-loop model.
+-- A hook reads one JSON object from stdin describing the event, and a Stop hook
+-- may write one JSON object to stdout to influence the turn. This module models
+-- the fields the gate reads from the input, and the two output shapes it emits:
+-- a @decision: block@ (with a reason fed back to the main-loop model) and a
+-- @systemMessage@ (shown to the user, not added to model context).
 module Gate.HookProtocol
   ( HookEvent(..)
   , BlockReason(..)
   , readHookEvent
   , emitBlock
+  , blockAndExit
+  , emitSystemMessage
   ) where
 
 import Data.Aeson (FromJSON (parseJSON), Value, object, withObject, (.!=), (.:?), (.=))
@@ -19,6 +21,7 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Types qualified as Aeson (Parser)
 import Data.ByteString.Lazy qualified as LazyByteString
 import Data.Text (Text)
+import System.Exit (exitSuccess)
 
 -- | The subset of a hook's stdin payload the gate reads. Every field except
 -- the session id is optional because which fields are present depends on the
@@ -51,9 +54,19 @@ readHookEvent = do
     Left err -> error ("vibes-gate: could not decode hook event from stdin: " <> err)
     Right event -> pure event
 
--- | Emit the one output shape the gate uses: block the Stop and feed the reason
--- back to the model. Printing this and exiting 0 is how a Stop hook asks the
--- turn to continue.
+-- | Block the Stop and feed the reason back to the model. Printing this JSON and
+-- exiting 0 is how a Stop hook asks the turn to continue.
 emitBlock :: BlockReason -> IO ()
 emitBlock (BlockReason reason) =
   LazyByteString.putStr (Aeson.encode (object ["decision" .= ("block" :: Text), "reason" .= reason]))
+
+-- | A blocking phase emits its reason and ends the gate immediately: later
+-- phases do not run on a Stop that one phase already blocked.
+blockAndExit :: BlockReason -> IO a
+blockAndExit reason = emitBlock reason >> exitSuccess
+
+-- | Emit a user-visible, non-blocking message (the end-of-gate "gate clear"
+-- notice). systemMessage is shown to the user and is not added to model context.
+emitSystemMessage :: Text -> IO ()
+emitSystemMessage message =
+  LazyByteString.putStr (Aeson.encode (object ["systemMessage" .= message]))

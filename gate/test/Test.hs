@@ -9,7 +9,7 @@ import Gate.DiffRender (renderDiffs)
 import Gate.Edit (Edit (..), Replacement (..), editFilePath, parseEditFromTool)
 import Gate.RecordEdit (SkipReason (..), pathSkipReason)
 import Gate.ReviewPrompt (hasViolations)
-import Gate.Transcript (turnTouchedState)
+import Gate.Transcript (turnAssistantText)
 import Hedgehog (Gen, Property, forAll, property, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
@@ -34,44 +34,49 @@ tests =
     , editPropertyTests
     ]
 
--- The Phase B decision end to end: write a transcript file and ask the real
--- 'turnTouchedState' whether the turn touched state. This exercises line
--- parsing, "since the last real user prompt", and the state-touching set
--- together, which is where the gnarly logic lives.
+-- The critique claims-extraction end to end: write a transcript file and ask the
+-- real 'turnAssistantText' for the assistant prose since the last real user
+-- prompt. This exercises line parsing, "since the last real user prompt", and
+-- text-block extraction together, which is where the gnarly logic lives.
 
 transcriptTests :: TestTree
 transcriptTests =
   testGroup
-    "turnTouchedState"
-    [ testCase "state tool after the last user prompt counts" $ do
-        touched <- touchedFor "after-bash" [userPrompt, assistantTool "Bash"]
-        touched @?= True
-    , testCase "state tool only before the last prompt does not count" $ do
-        -- The Bash is before the prompt; after it only a read-only tool.
-        touched <- touchedFor "before-bash" [assistantTool "Bash", userPrompt, assistantTool "Read"]
-        touched @?= False
-    , testCase "an mcp tool after the prompt counts" $ do
-        touched <- touchedFor "mcp" [userPrompt, assistantTool "mcp__hoogle__search"]
-        touched @?= True
-    , testCase "a turn with no tools does not count" $ do
-        touched <- touchedFor "no-tools" [userPrompt]
-        touched @?= False
+    "turnAssistantText"
+    [ testCase "collects assistant text after the last user prompt" $ do
+        claims <- claimsFor "after" [userPrompt, assistantSays "I fixed the bug"]
+        claims @?= "I fixed the bug"
+    , testCase "ignores assistant text before the last user prompt" $ do
+        -- The first claim is from a previous turn; only the latest turn counts.
+        claims <- claimsFor "before" [assistantSays "old claim", userPrompt, assistantSays "new claim"]
+        claims @?= "new claim"
+    , testCase "joins multiple assistant turns with newlines" $ do
+        claims <- claimsFor "multi" [userPrompt, assistantSays "first", assistantSays "second"]
+        claims @?= "first\nsecond"
+    , testCase "a tool-reply user entry is not a turn boundary" $ do
+        -- The array-content user entry is a tool result, not a real prompt, so
+        -- the earlier claim is still in this turn.
+        claims <- claimsFor "toolreply" [userPrompt, assistantSays "before tool", toolResult, assistantSays "after tool"]
+        claims @?= "before tool\nafter tool"
     ]
 
-touchedFor :: String -> [Text] -> IO Bool
-touchedFor name transcriptLines = do
+claimsFor :: String -> [Text] -> IO Text
+claimsFor name transcriptLines = do
   tmp <- getTemporaryDirectory
   let path = tmp </> ("vibes-gate-test-" <> name <> ".jsonl")
   writeFile path (Text.unpack (Text.unlines transcriptLines))
-  turnTouchedState path
+  turnAssistantText path
 
 userPrompt :: Text
 userPrompt = "{\"type\":\"user\",\"message\":{\"content\":\"do the thing\"}}"
 
-assistantTool :: Text -> Text
-assistantTool toolName =
-  "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"name\":\""
-    <> toolName
+toolResult :: Text
+toolResult = "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"content\":\"ok\"}]}}"
+
+assistantSays :: Text -> Text
+assistantSays text =
+  "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\""
+    <> text
     <> "\"}]}}"
 
 -- Skill selection maps touched extensions to the relevant language skills.

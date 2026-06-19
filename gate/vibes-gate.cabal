@@ -64,8 +64,16 @@ library
       Gate.RecordEdit
       Gate.DiffRender
       Gate.Corpus
+      Gate.FileContext
+      Gate.Repo
+      Gate.GateConfig
+      Gate.EditStack
+      Gate.NestedClaude
       Gate.Transcript
       Gate.ReviewPrompt
+      Gate.Dumbify
+      Gate.Critique
+      Gate.RuleReview
       Gate.StopGate
   other-modules:
       Paths_vibes_gate
