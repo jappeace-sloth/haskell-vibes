@@ -70,6 +70,9 @@ buildArtifactInfixes = ["/node_modules/", "/.git/", "/dist-newstyle/"]
 -- line to the review stack.
 recordEdit :: IO ()
 recordEdit = do
+  -- Recording respects the rule-review skip flag because the only consumer of
+  -- the review stack is the Stop gate's Phase A rule review. With review off
+  -- nothing ever reads the stack, so recording would be pure overhead.
   disabled <- ruleCheckDisabled
   unless disabled $ do
     event <- readHookEvent

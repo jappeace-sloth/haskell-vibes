@@ -75,6 +75,10 @@ lookupKey key value = case value of
 toolsSinceLastUserPrompt :: [TranscriptLine] -> [Text]
 toolsSinceLastUserPrompt = nub . concatMap toolNamesOf . linesAfterLastUserPrompt
 
+-- | The suffix of lines following the last real user prompt. Implemented by
+-- reversing, taking lines up to the first prompt from the end, then reversing
+-- back: 'takeWhile' from the end stops at the most recent prompt, so what
+-- survives is exactly the lines after it (or all lines if there is no prompt).
 linesAfterLastUserPrompt :: [TranscriptLine] -> [TranscriptLine]
 linesAfterLastUserPrompt = reverse . takeWhile (not . isRealUserPrompt) . reverse
 
