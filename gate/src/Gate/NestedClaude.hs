@@ -5,7 +5,9 @@
 -- with every gate phase disabled in its environment, so its own hooks cannot
 -- re-enter this gate. Second, the gate FAILS LOUD: a reviewer that timed out,
 -- crashed, or returned nothing is not read as a clean pass. It is logged and, on
--- its first occurrence this turn, blocks the Stop with a descriptive reason.
+-- its first occurrence this turn, blocks the Stop with a descriptive reason for
+-- the model AND a user-visible systemMessage naming the weird exit status, so a
+-- silently broken reviewer is never mistaken for a clean pass by either of them.
 module Gate.NestedClaude
   ( Reviewer(..)
   , NestedResult(..)
@@ -20,7 +22,7 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding (decodeUtf8Lenient, encodeUtf8)
-import Gate.HookProtocol (BlockReason (BlockReason), blockAndExit)
+import Gate.HookProtocol (BlockReason (BlockReason), blockAndExitWithNotice)
 import Gate.TurnState (flagExists, writeFlag)
 import System.Directory (createDirectoryIfMissing)
 import System.Environment (getEnvironment, lookupEnv)
@@ -102,17 +104,32 @@ decodeLazy :: LazyByteString.ByteString -> Text
 decodeLazy = decodeUtf8Lenient . LazyByteString.toStrict
 
 -- | Log a broken nested call, and on its first occurrence this turn block the
--- Stop with a loud reason (then exit). On later occurrences it only logs and
--- returns, so a permanently broken CLI surfaces once but does not wedge the turn.
+-- Stop with a loud reason for the model and a user-visible notice (then exit).
+-- On later occurrences it only logs and returns, so a permanently broken CLI
+-- surfaces once but does not wedge the turn.
 surfaceNestedFailure :: Text -> Text -> Text -> Int -> Bool -> Text -> FilePath -> IO ()
 surfaceNestedFailure session phase model exitCode emptyOut stderrText warnFlag = do
   appendFailureLog session phase model detail stderrText
   alreadyWarned <- flagExists warnFlag
   unless alreadyWarned $ do
     writeFlag warnFlag
-    blockAndExit (BlockReason (failureReason phase model detail stderrText))
+    blockAndExitWithNotice
+      (BlockReason (failureReason phase model detail stderrText))
+      (failureNotice phase model detail)
   where
     detail = failureDetail exitCode emptyOut
+
+-- | The short, user-visible companion to 'failureReason'. It names the phase,
+-- the model, and the weird exit status so a watching human sees at once that a
+-- reviewer broke and where to look, instead of mistaking the silence for a
+-- clean pass. The default failure log path is named because it holds the detail.
+failureNotice :: Text -> Text -> Text -> Text
+failureNotice phase model detail =
+  Text.concat
+    [ "vibes-gate: the ", phase, " reviewer (", model, ") returned a bad exit status ("
+    , detail, "), so this turn was NOT checked by it. Details in the gate failure log "
+    , "($CLAUDE_GATE_FAILURE_LOG, default ~/.claude/gate-failures.log)."
+    ]
 
 failureDetail :: Int -> Bool -> Text
 failureDetail exitCode emptyOut =
