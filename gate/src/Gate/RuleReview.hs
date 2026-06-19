@@ -48,7 +48,7 @@ reviewClaimed session paths = do
   edits <- readEdits (claimedStack paths)
   corpus <- buildCorpus files
   fullFiles <- renderFullFiles files
-  timeoutSecs <- envInt "CLAUDE_RULE_REVIEW_TIMEOUT" 150
+  timeoutSecs <- envInt "CLAUDE_RULE_REVIEW_TIMEOUT" 300
   let reviewer = Reviewer reviewerModel True timeoutSecs Nothing
       prompt = buildReviewPrompt corpus (renderDiffs edits) fullFiles
   result <- runNested reviewer prompt

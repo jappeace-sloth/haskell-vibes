@@ -68,7 +68,7 @@ runDumbifyRound session paths currentMark thisRound maxRounds = do
   edits <- readEdits (reviewStack paths)
   fullFiles <- renderFullFiles files
   repo <- repoForFiles files
-  timeoutSecs <- envInt "CLAUDE_DUMBIFY_TIMEOUT" 180
+  timeoutSecs <- envInt "CLAUDE_DUMBIFY_TIMEOUT" 300
   model <- envStr "CLAUDE_DUMBIFY_MODEL" "claude-haiku-4-5"
   let reviewer = Reviewer model True timeoutSecs repo
       prompt = dumbifyPrompt (renderDiffs edits) fullFiles

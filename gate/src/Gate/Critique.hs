@@ -66,7 +66,7 @@ runCritiqueRound session transcript paths hasEdits currentMark = do
   edits <- readEdits (reviewStack paths)
   repo <- repoForFilesOrCwd files
   previous <- readPreviousChallenges (critiquePrev paths)
-  timeoutSecs <- envInt "CLAUDE_CRITIQUE_TIMEOUT" 600
+  timeoutSecs <- envInt "CLAUDE_CRITIQUE_TIMEOUT" 1200
   model <- envStr "CLAUDE_CRITIQUE_MODEL" "claude-opus-4-8"
   let diffs = if hasEdits then renderDiffs edits else "(no file edits this turn)"
       reviewer = Reviewer model False timeoutSecs repo
