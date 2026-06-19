@@ -1,0 +1,192 @@
+module Main (main) where
+
+import Data.Aeson (Result (Success), Value, eitherDecode, eitherDecodeStrict, encode, fromJSON, toJSON)
+import Data.ByteString.Char8 qualified as ByteString
+import Data.Text (Text)
+import Data.Text qualified as Text
+import Gate.Corpus (selectSkills)
+import Gate.DiffRender (renderDiffs)
+import Gate.Edit (Edit (..), Replacement (..), editFilePath, parseEditFromTool)
+import Gate.RecordEdit (SkipReason (..), pathSkipReason)
+import Gate.ReviewPrompt (hasViolations)
+import Gate.Transcript (turnAssistantText)
+import Hedgehog (Gen, Property, forAll, property, (===))
+import Hedgehog.Gen qualified as Gen
+import Hedgehog.Range qualified as Range
+import System.Directory (getTemporaryDirectory)
+import System.FilePath ((</>))
+import Test.Tasty (TestTree, defaultMain, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
+import Test.Tasty.HUnit (assertBool, testCase, (@?=))
+
+main :: IO ()
+main = defaultMain tests
+
+tests :: TestTree
+tests =
+  testGroup
+    "vibes-gate"
+    [ transcriptTests
+    , skillSelectionTests
+    , skipReasonTests
+    , violationTests
+    , editRoundTripTests
+    , editPropertyTests
+    ]
+
+-- The critique claims-extraction end to end: write a transcript file and ask the
+-- real 'turnAssistantText' for the assistant prose since the last real user
+-- prompt. This exercises line parsing, "since the last real user prompt", and
+-- text-block extraction together, which is where the gnarly logic lives.
+
+transcriptTests :: TestTree
+transcriptTests =
+  testGroup
+    "turnAssistantText"
+    [ testCase "collects assistant text after the last user prompt" $ do
+        claims <- claimsFor "after" [userPrompt, assistantSays "I fixed the bug"]
+        claims @?= "I fixed the bug"
+    , testCase "ignores assistant text before the last user prompt" $ do
+        -- The first claim is from a previous turn; only the latest turn counts.
+        claims <- claimsFor "before" [assistantSays "old claim", userPrompt, assistantSays "new claim"]
+        claims @?= "new claim"
+    , testCase "joins multiple assistant turns with newlines" $ do
+        claims <- claimsFor "multi" [userPrompt, assistantSays "first", assistantSays "second"]
+        claims @?= "first\nsecond"
+    , testCase "a tool-reply user entry is not a turn boundary" $ do
+        -- The array-content user entry is a tool result, not a real prompt, so
+        -- the earlier claim is still in this turn.
+        claims <- claimsFor "toolreply" [userPrompt, assistantSays "before tool", toolResult, assistantSays "after tool"]
+        claims @?= "before tool\nafter tool"
+    ]
+
+claimsFor :: String -> [Text] -> IO Text
+claimsFor name transcriptLines = do
+  tmp <- getTemporaryDirectory
+  let path = tmp </> ("vibes-gate-test-" <> name <> ".jsonl")
+  writeFile path (Text.unpack (Text.unlines transcriptLines))
+  turnAssistantText path
+
+userPrompt :: Text
+userPrompt = "{\"type\":\"user\",\"message\":{\"content\":\"do the thing\"}}"
+
+toolResult :: Text
+toolResult = "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"content\":\"ok\"}]}}"
+
+assistantSays :: Text -> Text
+assistantSays text =
+  "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\""
+    <> text
+    <> "\"}]}}"
+
+-- Skill selection maps touched extensions to the relevant language skills.
+
+skillSelectionTests :: TestTree
+skillSelectionTests =
+  testGroup
+    "selectSkills"
+    [ testCase "haskell sources pull in the haskell skills" $
+        selectSkills ["src/Foo.hs"]
+          @?= ["error-messages", "haskell-backpack", "haskell-project", "unwitch-conversions", "verify-test-fails"]
+    , testCase "nix files pull in the nix skills" $
+        selectSkills ["default.nix"] @?= ["ci-nix", "nix"]
+    , testCase "unrelated files select nothing" $
+        selectSkills ["notes.md"] @?= []
+    , testCase "results are deduplicated across many files" $
+        selectSkills ["A.hs", "B.hs", "x.cabal"]
+          @?= ["error-messages", "haskell-backpack", "haskell-project", "unwitch-conversions", "verify-test-fails"]
+    ]
+
+-- The record filter: which paths are skipped and why.
+
+skipReasonTests :: TestTree
+skipReasonTests =
+  testGroup
+    "pathSkipReason"
+    [ testCase "haskell source is reviewed" $ pathSkipReason "src/Foo.hs" @?= Nothing
+    , testCase "json is skipped as binary-ish" $ pathSkipReason "package.json" @?= Just SkipBinaryExtension
+    , testCase "archives are skipped" $ pathSkipReason "bundle.tar.gz" @?= Just SkipArchive
+    , testCase "build artifacts under dist-newstyle are skipped" $
+        pathSkipReason "/home/x/dist-newstyle/build/Foo.hs" @?= Just SkipBuildArtifact
+    , testCase "the result symlink is skipped" $ pathSkipReason "/home/x/result" @?= Just SkipBuildArtifact
+    ]
+
+-- Reviewer-reply parsing: only a VIOLATION line means findings.
+
+violationTests :: TestTree
+violationTests =
+  testGroup
+    "hasViolations"
+    [ testCase "the clean reply OK is not a violation" $ hasViolations "OK\n" @?= False
+    , testCase "empty output is not a violation" $ hasViolations "" @?= False
+    , testCase "a VIOLATION block is a violation" $
+        hasViolations "VIOLATION: used a wildcard\nRULE: \"...\"\n" @?= True
+    , testCase "the word violation mid-line is not a violation" $
+        hasViolations "no violation here\n" @?= False
+    ]
+
+-- Edits survive the persist/reload round trip the two hooks rely on, and the
+-- reconstructed diff shows the new text under the right label.
+
+editRoundTripTests :: TestTree
+editRoundTripTests =
+  testGroup
+    "edit persistence"
+    [ testCase "an Edit round-trips and renders its new text" $ do
+        edit <- parsedEdit "Edit" "{\"file_path\":\"src/Foo.hs\",\"old_string\":\"old line\",\"new_string\":\"new line\"}"
+        reloaded <- reencode edit
+        editFilePath reloaded @?= "src/Foo.hs"
+        let rendered = renderDiffs [reloaded]
+        assertBool "new text under --- with ---" (Text.isInfixOf "--- with ---\nnew line" rendered)
+        assertBool "old text under --- replaced ---" (Text.isInfixOf "--- replaced ---\nold line" rendered)
+    , testCase "a Write round-trips and renders its content" $ do
+        edit <- parsedEdit "Write" "{\"file_path\":\"a.txt\",\"content\":\"hello body\"}"
+        reloaded <- reencode edit
+        assertBool "content under --- new content ---" (Text.isInfixOf "--- new content ---\nhello body" (renderDiffs [reloaded]))
+    ]
+
+parsedEdit :: Text -> ByteString.ByteString -> IO Edit
+parsedEdit tool inputJson = case eitherDecodeStrict inputJson of
+  Left err -> fail ("test fixture is not valid JSON: " <> err)
+  Right (value :: Value) -> case parseEditFromTool tool value of
+    Left err -> fail ("parseEditFromTool failed: " <> err)
+    Right edit -> pure edit
+
+reencode :: Edit -> IO Edit
+reencode edit = case eitherDecode (encode edit) of
+  Left err -> fail ("edit did not round-trip: " <> err)
+  Right reloaded -> pure reloaded
+
+-- The JSON instances the two hooks rely on must satisfy
+-- fromJSON (toJSON e) == Success e for every edit shape, checked over
+-- generated inputs rather than the few hand-written fixtures above.
+
+editPropertyTests :: TestTree
+editPropertyTests =
+  testGroup
+    "edit JSON property"
+    [ testProperty "fromJSON . toJSON == Success" editJsonRoundTrip
+    ]
+
+editJsonRoundTrip :: Property
+editJsonRoundTrip = property $ do
+  edit <- forAll genEdit
+  fromJSON (toJSON edit) === Success edit
+
+genEdit :: Gen Edit
+genEdit =
+  Gen.choice
+    [ SingleEdit <$> genPath <*> genReplacement
+    , MultiEditFile <$> genPath <*> Gen.list (Range.linear 0 4) genReplacement
+    , WriteFileContent <$> genPath <*> genText
+    , NotebookCellSource <$> genPath <*> genText
+    ]
+
+genReplacement :: Gen Replacement
+genReplacement = Replacement <$> genText <*> genText
+
+genText :: Gen Text
+genText = Gen.text (Range.linear 0 40) Gen.unicode
+
+genPath :: Gen FilePath
+genPath = Gen.string (Range.linear 1 30) Gen.alphaNum

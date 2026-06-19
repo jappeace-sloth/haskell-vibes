@@ -105,10 +105,8 @@ launch_docker() {
     if [ "$VANILLA" -eq 0 ]; then
         cp -a "$(pwd)/CLAUDE.md" "$CONFIG_SNAPSHOT/CLAUDE.md"
         cp -a "$(pwd)/skills" "$CONFIG_SNAPSHOT/skills"
-        cp -a "$(pwd)/hooks" "$CONFIG_SNAPSHOT/hooks"
         CONFIG_MOUNTS+=("-v" "$CONFIG_SNAPSHOT/CLAUDE.md:/home/claude/.claude/CLAUDE.md")
         CONFIG_MOUNTS+=("-v" "$CONFIG_SNAPSHOT/skills:/home/claude/.claude/skills")
-        CONFIG_MOUNTS+=("-v" "$CONFIG_SNAPSHOT/hooks:/home/claude/.claude/hooks:ro")
     fi
 
     docker run -it \
@@ -182,15 +180,16 @@ launch_nspawn() {
         "$RUNTIME_ROOT/home/claude/character"
     touch "$RUNTIME_ROOT/home/claude/.claude.json"
 
-    # Snapshot the read-only config group (CLAUDE.md, skills, hooks, character)
-    # into a private per-launch copy and mount THOSE, instead of binding the
-    # live $(pwd) paths. Those dirs are shared by every machine launched from
-    # this checkout and can be emptied or changed on the host mid-session (a git
-    # checkout, another instance): a vanished stop-gate.sh silently disables the
-    # Stop gate, a swapped CLAUDE.md/skills/character changes behaviour
-    # underfoot. The snapshot lives outside the rootfs so the agent cannot reach
-    # it to edit its own gate. character is mounted even in vanilla mode, so it
-    # is always snapshotted.
+    # Snapshot the read-only config group (CLAUDE.md, skills, character) into a
+    # private per-launch copy and mount THOSE, instead of binding the live
+    # $(pwd) paths. Those dirs are shared by every machine launched from this
+    # checkout and can be emptied or changed on the host mid-session (a git
+    # checkout, another instance): a swapped CLAUDE.md/skills/character changes
+    # behaviour underfoot. The snapshot lives outside the rootfs so the agent
+    # cannot reach it to edit its own config. The Stop gate itself is no longer
+    # mounted: it is the vibes-gate binary baked into the image (see
+    # default.nix), so it cannot be disabled by a vanished mount. character is
+    # mounted even in vanilla mode, so it is always snapshotted.
     CONFIG_SNAPSHOT="/tmp/claude-config.${INSTANCE_NAME}.$$"
     mkdir -p "$CONFIG_SNAPSHOT"
     cp -a "$(pwd)/character" "$CONFIG_SNAPSHOT/character"
@@ -204,10 +203,8 @@ launch_nspawn() {
     if [ "$VANILLA" -eq 0 ]; then
         cp -a "$(pwd)/CLAUDE.md" "$CONFIG_SNAPSHOT/CLAUDE.md"
         cp -a "$(pwd)/skills" "$CONFIG_SNAPSHOT/skills"
-        cp -a "$(pwd)/hooks" "$CONFIG_SNAPSHOT/hooks"
         CONFIG_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/CLAUDE.md:/home/claude/.claude/CLAUDE.md")
         CONFIG_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/skills:/home/claude/.claude/skills")
-        CONFIG_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/hooks:/home/claude/.claude/hooks")
     fi
 
     REDDIT_SETENV=()
