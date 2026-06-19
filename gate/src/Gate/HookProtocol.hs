@@ -11,6 +11,7 @@ module Gate.HookProtocol
   , readHookEvent
   , emitBlock
   , blockAndExit
+  , blockAndExitWithNotice
   , emitSystemMessage
   ) where
 
@@ -64,6 +65,24 @@ emitBlock (BlockReason reason) =
 -- phases do not run on a Stop that one phase already blocked.
 blockAndExit :: BlockReason -> IO a
 blockAndExit reason = emitBlock reason >> exitSuccess
+
+-- | Block the Stop and, in the SAME hook response, show the user a notice. A
+-- Stop hook may emit only one JSON object, so the model-facing block reason and
+-- the user-facing systemMessage are combined into one object: the model gets the
+-- reason it must act on, and the human watching sees the notice rather than being
+-- left to guess at a phase that broke silently. Used for infrastructure failures
+-- (a nested reviewer that timed out or returned a weird exit status).
+--
+-- Decision: emit one JSON object carrying both "reason" and "systemMessage",
+-- rather than reusing emitBlock then emitSystemMessage as two writes. Alternative
+-- considered: two separate emits. Rejected because a hook may write only one JSON
+-- object to stdout, so the second write is ignored or breaks parsing; a single
+-- merged object is the only way to deliver both signals from one hook response.
+blockAndExitWithNotice :: BlockReason -> Text -> IO a
+blockAndExitWithNotice (BlockReason reason) notice = do
+  LazyByteString.putStr
+    (Aeson.encode (object ["decision" .= ("block" :: Text), "reason" .= reason, "systemMessage" .= notice]))
+  exitSuccess
 
 -- | Emit a user-visible, non-blocking message (the end-of-gate "gate clear"
 -- notice). systemMessage is shown to the user and is not added to model context.
