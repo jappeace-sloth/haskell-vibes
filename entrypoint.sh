@@ -16,4 +16,16 @@ chmod 700 /home/claude/.ssh
 # the host uid, which is CLAUDE_UID inside, so ssh accepts it as-is. Don't
 # attempt the change just to swallow the guaranteed error.
 
+# Start the shared Playwright MCP server as the claude user, in the background,
+# before handing off to claude. Both the main agent and nested gate critics then
+# connect to one warm browser over HTTP (see claude.sh MCP_CONFIG) instead of
+# each cold-spawning chromium. Wait briefly for the listener so the first claude
+# connects cleanly; proceed regardless once the budget is spent.
+su-exec "${CLAUDE_UID}:${CLAUDE_GID}" playwright-mcp-sidecar >/tmp/playwright-mcp.log 2>&1 &
+playwright_wait=0
+while [ "$playwright_wait" -lt 50 ] && ! curl -s -o /dev/null --max-time 1 http://127.0.0.1:9223/; do
+    playwright_wait=$((playwright_wait + 1))
+    sleep 0.2
+done
+
 exec su-exec "${CLAUDE_UID}:${CLAUDE_GID}" "$@"
