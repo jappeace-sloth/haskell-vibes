@@ -36,18 +36,46 @@ data TranscriptLine
   deriving stock (Eq, Show)
 
 -- | Classify a decoded transcript entry. Anything that is not a string-content
--- user message or an array-content assistant message is OtherLine; that single
--- default is the genuine meaning of "an entry we do not care about", not a
--- swallowed parse error (malformed JSON never reaches here, see 'readLines').
+-- user message or an array-content assistant message is OtherLine; that is the
+-- genuine meaning of "an entry we do not care about", not a swallowed parse
+-- error (malformed JSON never reaches here, see 'readLines').
 classifyLine :: Value -> TranscriptLine
 classifyLine value = case lookupKey "type" value of
-  Just (String "user") -> case messageContent value of
-    Just (String _userText) -> RealUserPrompt
-    _arrayOrAbsent -> OtherLine
-  Just (String "assistant") -> case messageContent value of
-    Just (Array items) -> AssistantToolUses (collectToolUseNames (toList items))
-    _stringOrAbsent -> OtherLine
-  _otherType -> OtherLine
+  Just (String "user") -> userLine (messageContent value)
+  Just (String "assistant") -> assistantLine (messageContent value)
+  -- Any other "type" string is an entry we ignore. String values cannot be
+  -- enumerated, so this is the one unavoidable catch-all.
+  Just (String _otherType) -> OtherLine
+  Just (Object _) -> OtherLine
+  Just (Array _) -> OtherLine
+  Just (Aeson.Number _) -> OtherLine
+  Just (Aeson.Bool _) -> OtherLine
+  Just Aeson.Null -> OtherLine
+  Nothing -> OtherLine
+
+-- | A user entry is a real prompt only when its content is a string; an array
+-- content is a tool result, which does not count.
+userLine :: Maybe Value -> TranscriptLine
+userLine = \case
+  Just (String _userText) -> RealUserPrompt
+  Just (Object _) -> OtherLine
+  Just (Array _) -> OtherLine
+  Just (Aeson.Number _) -> OtherLine
+  Just (Aeson.Bool _) -> OtherLine
+  Just Aeson.Null -> OtherLine
+  Nothing -> OtherLine
+
+-- | An assistant entry contributes its tool-use names when its content is the
+-- array of content blocks; any other content shape contributes nothing.
+assistantLine :: Maybe Value -> TranscriptLine
+assistantLine = \case
+  Just (Array items) -> AssistantToolUses (collectToolUseNames (toList items))
+  Just (String _) -> OtherLine
+  Just (Object _) -> OtherLine
+  Just (Aeson.Number _) -> OtherLine
+  Just (Aeson.Bool _) -> OtherLine
+  Just Aeson.Null -> OtherLine
+  Nothing -> OtherLine
 
 messageContent :: Value -> Maybe Value
 messageContent value = lookupKey "message" value >>= lookupKey "content"

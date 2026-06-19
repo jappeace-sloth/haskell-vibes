@@ -94,6 +94,7 @@ test-suite unit
   import: common-options
   type: exitcode-stdio-1.0
   main-is: Test.hs
+  ghc-options: -Wno-unused-packages
   hs-source-dirs:
       test
   build-depends:

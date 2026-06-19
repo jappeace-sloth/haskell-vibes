@@ -89,7 +89,9 @@ ruleCheckDisabled = (== Just "1") <$> lookupEnv "CLAUDE_SKIP_RULE_CHECK"
 
 recordIfRelevant :: Text -> Edit -> IO ()
 recordIfRelevant session edit = case pathSkipReason path of
-  Just _reason -> pure ()
+  Just SkipBinaryExtension -> pure ()
+  Just SkipArchive -> pure ()
+  Just SkipBuildArtifact -> pure ()
   Nothing -> do
     isRegularFile <- doesFileExist path
     when isRegularFile $ do
