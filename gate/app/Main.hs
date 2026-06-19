@@ -14,6 +14,8 @@ import Gate.TurnState (resetState, turnPaths)
 import Options.Applicative
 
 main :: IO ()
+-- Each subcommand parses to the IO action for its hook, so execParser yields an
+-- IO (IO ()); join runs the chosen action.
 main = join (execParser (info (subcommands <**> helper) description))
 
 description :: InfoMod a
