@@ -15,14 +15,16 @@ module Gate.StopGate
   ( runStopGate
   ) where
 
-import Control.Exception (IOException, try)
+import Control.Exception.Safe (SomeException, displayException, tryAny)
 import Control.Monad (unless, when)
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Char8 qualified as ByteString
+import Data.ByteString.Lazy qualified as LazyByteString
 import Data.List (nub, sort)
 import Data.Maybe (isJust)
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Text.Encoding (decodeUtf8Lenient, encodeUtf8)
 import Gate.Corpus (buildCorpus)
 import Gate.DiffRender (renderDiffs)
 import Gate.Edit (Edit, editFilePath)
@@ -36,6 +38,7 @@ import Gate.ReviewPrompt
   ( buildReviewPrompt
   , hasViolations
   , reviewBlockReason
+  , reviewerFailedReason
   , reviewerModel
   , verifyReason
   )
@@ -48,7 +51,8 @@ import Gate.TurnState
   )
 import System.Directory (doesFileExist, findExecutable, getFileSize, removeFile)
 import System.Environment (lookupEnv)
-import System.Process (readProcessWithExitCode)
+import System.Exit (ExitCode (ExitFailure, ExitSuccess))
+import System.Process.Typed (byteStringInput, proc, readProcess, setStdin)
 
 -- | Entry point for the @stop-gate@ subcommand.
 runStopGate :: IO ()
@@ -82,15 +86,21 @@ reviewClaimedStack paths = do
     else do
       edits <- readEdits (claimedStack paths)
       corpus <- buildCorpus (sortUniqueFilePaths edits)
-      reviewOutput <- runReviewer (buildReviewPrompt corpus (renderDiffs edits))
+      result <- runReviewer (buildReviewPrompt corpus (renderDiffs edits))
       removeIfExists (claimedStack paths)
-      if hasViolations reviewOutput
-        then do
+      case result of
+        ReviewedClean -> pure False
+        ReviewedViolations reviewOutput -> do
           -- New fixes are coming, so re-arm verification to run after them.
           removeIfExists (verifyDoneFlag paths)
           emitBlock (BlockReason (reviewBlockReason reviewOutput))
           pure True
-        else pure False
+        ReviewerFailed detail -> do
+          -- Do not treat a failed reviewer as clean: surface it loudly so the
+          -- turn is not silently trusted on an unchecked diff.
+          removeIfExists (verifyDoneFlag paths)
+          emitBlock (BlockReason (reviewerFailedReason detail))
+          pure True
 
 sortUniqueFilePaths :: [Edit] -> [FilePath]
 sortUniqueFilePaths = sort . nub . map editFilePath
@@ -107,23 +117,49 @@ decodeEdit raw = case Aeson.eitherDecodeStrict raw of
   Right edit -> edit
   Left err -> error ("vibes-gate stop-gate: corrupt edit on review stack: " <> err)
 
--- | Run the reviewer model on the prompt, returning its stdout. Decision: treat
--- any failure (timeout, CLI error, network hiccup) as empty output, which
--- 'hasViolations' reads as clean. Blocking a turn because the reviewer
--- subprocess failed would be worse than skipping one review. The 60s timeout
--- guards against a hung subprocess holding the turn open.
-runReviewer :: Text -> IO Text
+-- | The outcome of the Phase A reviewer call. Distinguishing a real verdict
+-- from an infrastructure failure is the whole point: a failed reviewer must be
+-- surfaced, not silently read as "no violations".
+data ReviewResult
+  = ReviewedClean
+  | ReviewedViolations Text
+  | ReviewerFailed Text
+
+-- | Run the reviewer model on the prompt over typed-process. Decision: a clean
+-- run with no @VIOLATION:@ lines is ReviewedClean; violations are
+-- ReviewedViolations; a non-zero exit (the 60s @timeout@ wrapper fires 124 on a
+-- hang) or a spawn exception is ReviewerFailed, carrying the detail. Nothing is
+-- swallowed: the caller surfaces a failure rather than treating it as clean.
+runReviewer :: Text -> IO ReviewResult
 runReviewer prompt = do
-  result <-
-    try
-      ( readProcessWithExitCode
-          "timeout"
-          ["60", "claude", "-p", "--model", Text.unpack reviewerModel]
-          (Text.unpack prompt)
-      )
-  pure $ case result of
-    Right (_exit, out, _err) -> Text.pack out
-    Left (_ioError :: IOException) -> ""
+  let reviewerProcess =
+        setStdin
+          (byteStringInput (LazyByteString.fromStrict (encodeUtf8 prompt)))
+          (proc "timeout" ["60", "claude", "-p", "--model", Text.unpack reviewerModel])
+  outcome <- tryAny (readProcess reviewerProcess)
+  pure (interpretReviewer outcome)
+
+interpretReviewer
+  :: Either SomeException (ExitCode, LazyByteString.ByteString, LazyByteString.ByteString)
+  -> ReviewResult
+interpretReviewer = \case
+  Left err -> ReviewerFailed (Text.pack (displayException err))
+  Right (ExitSuccess, out, _err) -> classifyReviewOutput (decodeLazy out)
+  Right (ExitFailure code, _out, err) ->
+    ReviewerFailed ("the reviewer process exited with code " <> Text.pack (show code) <> reviewerStderr err)
+
+classifyReviewOutput :: Text -> ReviewResult
+classifyReviewOutput output
+  | hasViolations output = ReviewedViolations output
+  | otherwise = ReviewedClean
+
+reviewerStderr :: LazyByteString.ByteString -> Text
+reviewerStderr raw = case Text.strip (decodeLazy raw) of
+  "" -> ""
+  err -> ": " <> err
+
+decodeLazy :: LazyByteString.ByteString -> Text
+decodeLazy = decodeUtf8Lenient . LazyByteString.toStrict
 
 -- =====================  Phase B: verification  =============================
 

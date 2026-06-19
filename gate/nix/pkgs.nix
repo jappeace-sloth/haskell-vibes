@@ -1,4 +1,4 @@
-{ sources ? import ../npins
+{ sources ? import ../../npins
 ,
 }:
 import sources.nixpkgs { }

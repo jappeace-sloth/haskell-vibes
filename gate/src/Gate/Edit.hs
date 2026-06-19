@@ -21,6 +21,7 @@ data Replacement = Replacement
   { replacedText :: Text
   , replacementText :: Text
   }
+  deriving stock (Eq, Show)
 
 instance FromJSON Replacement where
   parseJSON :: Value -> Aeson.Parser Replacement
@@ -35,6 +36,7 @@ data Edit
   | MultiEditFile FilePath [Replacement]
   | WriteFileContent FilePath Text
   | NotebookCellSource FilePath Text
+  deriving stock (Eq, Show)
 
 editFilePath :: Edit -> FilePath
 editFilePath = \case

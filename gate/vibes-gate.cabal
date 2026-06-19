@@ -79,7 +79,8 @@ library
       text,
       directory,
       filepath,
-      process
+      typed-process,
+      safe-exceptions
 
 executable vibes-gate
   import: common-options
@@ -87,7 +88,8 @@ executable vibes-gate
   hs-source-dirs:
       app
   build-depends:
-      vibes-gate
+      vibes-gate,
+      optparse-applicative
   ghc-options: -Wno-unused-packages
 
 test-suite unit
@@ -100,6 +102,8 @@ test-suite unit
   build-depends:
       tasty,
       tasty-hunit,
+      tasty-hedgehog,
+      hedgehog,
       vibes-gate,
       aeson,
       bytestring,

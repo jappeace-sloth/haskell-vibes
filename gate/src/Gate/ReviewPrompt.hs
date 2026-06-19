@@ -11,6 +11,7 @@ module Gate.ReviewPrompt
   , maxDiffPromptChars
   , hasViolations
   , reviewBlockReason
+  , reviewerFailedReason
   , verifyReason
   ) where
 
@@ -105,6 +106,19 @@ reviewBlockReason reviewOutput =
     , "\n--- reviewer findings ---\n"
     , reviewOutput
     , "\n--- end reviewer findings ---"
+    ]
+
+-- | Shown to the main-loop model when the reviewer could not produce a verdict
+-- (timeout, missing claude CLI, spawn error). Surfaced rather than silently
+-- treated as a clean pass, so the turn is not trusted on an unchecked diff.
+reviewerFailedReason :: Text -> Text
+reviewerFailedReason detail =
+  Text.concat
+    [ "GATE INFRASTRUCTURE FAILURE: the ", reviewerModel, " rule reviewer could not run, so the "
+    , "diffs you applied this turn were NOT rule-checked. This is surfaced rather than silently "
+    , "passed off as clean. Find out why before trusting the turn (timeout, missing claude CLI, "
+    , "auth, model error). Set CLAUDE_SKIP_RULE_CHECK=1 to disable.\n\n--- detail ---\n"
+    , detail
     ]
 
 -- | The Phase B verification nudge. This is the final prompt of the turn: review

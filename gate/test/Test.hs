@@ -1,18 +1,22 @@
 module Main (main) where
 
-import Data.Aeson (Value, eitherDecode, eitherDecodeStrict, encode)
+import Data.Aeson (Result (Success), Value, eitherDecode, eitherDecodeStrict, encode, fromJSON, toJSON)
 import Data.ByteString.Char8 qualified as ByteString
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Gate.Corpus (selectSkills)
 import Gate.DiffRender (renderDiffs)
-import Gate.Edit (Edit, editFilePath, parseEditFromTool)
+import Gate.Edit (Edit (..), Replacement (..), editFilePath, parseEditFromTool)
 import Gate.RecordEdit (SkipReason (..), pathSkipReason)
 import Gate.ReviewPrompt (hasViolations)
 import Gate.Transcript (turnTouchedState)
+import Hedgehog (Gen, Property, forAll, property, (===))
+import Hedgehog.Gen qualified as Gen
+import Hedgehog.Range qualified as Range
 import System.Directory (getTemporaryDirectory)
 import System.FilePath ((</>))
 import Test.Tasty (TestTree, defaultMain, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 import Test.Tasty.HUnit (assertBool, testCase, (@?=))
 
 main :: IO ()
@@ -27,6 +31,7 @@ tests =
     , skipReasonTests
     , violationTests
     , editRoundTripTests
+    , editPropertyTests
     ]
 
 -- The Phase B decision end to end: write a transcript file and ask the real
@@ -146,3 +151,37 @@ reencode :: Edit -> IO Edit
 reencode edit = case eitherDecode (encode edit) of
   Left err -> fail ("edit did not round-trip: " <> err)
   Right reloaded -> pure reloaded
+
+-- The JSON instances the two hooks rely on must satisfy
+-- fromJSON (toJSON e) == Success e for every edit shape, checked over
+-- generated inputs rather than the few hand-written fixtures above.
+
+editPropertyTests :: TestTree
+editPropertyTests =
+  testGroup
+    "edit JSON property"
+    [ testProperty "fromJSON . toJSON == Success" editJsonRoundTrip
+    ]
+
+editJsonRoundTrip :: Property
+editJsonRoundTrip = property $ do
+  edit <- forAll genEdit
+  fromJSON (toJSON edit) === Success edit
+
+genEdit :: Gen Edit
+genEdit =
+  Gen.choice
+    [ SingleEdit <$> genPath <*> genReplacement
+    , MultiEditFile <$> genPath <*> Gen.list (Range.linear 0 4) genReplacement
+    , WriteFileContent <$> genPath <*> genText
+    , NotebookCellSource <$> genPath <*> genText
+    ]
+
+genReplacement :: Gen Replacement
+genReplacement = Replacement <$> genText <*> genText
+
+genText :: Gen Text
+genText = Gen.text (Range.linear 0 40) Gen.unicode
+
+genPath :: Gen FilePath
+genPath = Gen.string (Range.linear 1 30) Gen.alphaNum

@@ -1,4 +1,4 @@
-{ sources ? import ../npins
+{ sources ? import ../../npins
 , pkgs ? import ./pkgs.nix { inherit sources; }
 , hpkgs ? import ./hpkgs.nix { inherit pkgs; }
 ,
