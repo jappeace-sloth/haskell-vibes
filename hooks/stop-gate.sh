@@ -472,7 +472,7 @@ critique_editmark="$state_dir/critique-editmark"
 
 critique_model="${CLAUDE_CRITIQUE_MODEL:-claude-opus-4-8}"
 critique_max_rounds="${CLAUDE_CRITIQUE_MAX_ROUNDS:-2}"
-critique_timeout="${CLAUDE_CRITIQUE_TIMEOUT:-300}"
+critique_timeout="${CLAUDE_CRITIQUE_TIMEOUT:-600}"
 
 if [ "${CLAUDE_SKIP_CRITIQUE:-0}" != "1" ] \
    && [ ! -f "$critique_done_flag" ] \
