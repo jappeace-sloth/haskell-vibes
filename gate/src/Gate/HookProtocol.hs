@@ -14,6 +14,8 @@ module Gate.HookProtocol
 
 import Data.Aeson (FromJSON (parseJSON), Value, object, withObject, (.!=), (.:?), (.=))
 import Data.Aeson qualified as Aeson
+-- Data.Aeson does not re-export Parser; it lives in Data.Aeson.Types. Both are
+-- qualified as Aeson so the FromJSON method signature reads Aeson.Parser.
 import Data.Aeson.Types qualified as Aeson (Parser)
 import Data.ByteString.Lazy qualified as LazyByteString
 import Data.Text (Text)
