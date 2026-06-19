@@ -48,8 +48,11 @@ echo "Nix daemon is live. Dropping privileges..."
 # Start the shared Playwright MCP server as the claude user, in the background,
 # before handing off to claude. Both the main agent and nested gate critics then
 # connect to one warm browser over HTTP (see claude.sh MCP_CONFIG) instead of
-# each cold-spawning chromium. Wait briefly for the listener so the first claude
-# connects cleanly; proceed regardless once the budget is spent.
+# each cold-spawning chromium. Wait up to ~10s (50 * 0.2s) for the listener so
+# the first claude connects cleanly, then proceed regardless. The probe targets
+# "/" rather than the configured "/mcp" on purpose: any HTTP reply proves the
+# port is accepting connections, whereas a GET to the streamable-HTTP "/mcp" can
+# open a stream and block until the timeout. We only need to know it is up.
 su-exec ${CLAUDE_UID}:${CLAUDE_GID} playwright-mcp-sidecar >/tmp/playwright-mcp.log 2>&1 &
 playwright_wait=0
 while [ "$playwright_wait" -lt 50 ] && ! curl -s -o /dev/null --max-time 1 http://127.0.0.1:9223/; do
