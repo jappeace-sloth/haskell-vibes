@@ -10,6 +10,7 @@
 -- before rule review (so its fixes land on the stack and get rule-checked).
 module Gate.Critique
   ( runCritique
+  , critiqueDiffBlock
   ) where
 
 import Control.Monad (when)
@@ -63,13 +64,12 @@ runCritiqueRound :: Text -> Maybe FilePath -> TurnPaths -> Bool -> Int -> IO ()
 runCritiqueRound session transcript paths hasEdits currentMark = do
   claims <- maybe (pure "") (fmap (Text.take maxCritiqueClaimChars) . turnAssistantText) transcript
   files <- stackFilePaths (reviewStack paths)
-  edits <- readEdits (reviewStack paths)
+  diffs <- critiqueDiffBlock hasEdits (reviewStack paths)
   repo <- repoForFilesOrCwd files
   previous <- readPreviousChallenges (critiquePrev paths)
   timeoutSecs <- envInt "CLAUDE_CRITIQUE_TIMEOUT" 1200
   model <- envStr "CLAUDE_CRITIQUE_MODEL" "claude-opus-4-8"
-  let diffs = if hasEdits then renderDiffs edits else "(no file edits this turn)"
-      reviewer = Reviewer model False timeoutSecs repo
+  let reviewer = Reviewer model False timeoutSecs repo
       prompt = critiquePrompt previous claims diffs
   result <- runNested reviewer prompt
   case result of
@@ -101,6 +101,17 @@ handleChallenge paths currentMark model output = do
       -- Round cap reached: stop debating without marking approved (the concern
       -- is unresolved), and let rule review proceed.
       writeFlag (critiqueDone paths)
+
+-- | The diff block shown to the critic. Only a turn that recorded edits has a
+-- review stack on disk; a conversational turn has none, and reading the absent
+-- stack would crash this phase before the critic runs (the critic is meant to
+-- run on every turn, edits or not). So read the stack only when there are edits,
+-- and otherwise hand the critic the explicit no-edits placeholder.
+critiqueDiffBlock :: Bool -> FilePath -> IO Text
+critiqueDiffBlock hasEdits stackPath =
+  if hasEdits
+    then renderDiffs <$> readEdits stackPath
+    else pure "(no file edits this turn)"
 
 readPreviousChallenges :: FilePath -> IO (Maybe Text)
 readPreviousChallenges path = do
