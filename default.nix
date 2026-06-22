@@ -92,6 +92,8 @@ let
       pkgs.python3
       pkgs.git
       pkgs.curl
+      pkgs.dnsutils # dig, nslookup, delv, nsupdate (DNS/hosting debugging)
+      pkgs.bind.host # the `host` binary (not shipped in dnsutils)
       pkgs.xz
       pkgs.su-exec
       pkgs.lix # better nix
