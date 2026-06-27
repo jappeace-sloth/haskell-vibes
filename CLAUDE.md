@@ -58,7 +58,10 @@ Each instance has its own project clones so two instances can work on the same p
 # Decision Log
 - When making significant architectural choices (library selection, design patterns,
   data representation), record the decision as a comment near the relevant code.
-- Use a `-- Decision:` prefix so they are easy to grep for.
+- Use a `-- Decision:` prefix so they are easy to grep for. Use the comment
+  syntax of the file's language, not the literal `--`: `-- Decision:` in Haskell,
+  `# Decision:` in Nix/shell/YAML, `// Decision:` in C-likes. Search across
+  languages with `grep -rn 'Decision:'` (or `'[-#/]* *Decision:'`).
 - Format: what was chosen, what alternatives were considered, and why.
 - Do NOT write decisions to memory — memory is per-instance and is not shared
   across agents or preserved in version control.
