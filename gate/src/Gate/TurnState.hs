@@ -140,8 +140,14 @@ readCounter path = do
   if not present
     then pure 0
     else do
-      contents <- readFile path
-      pure (fromMaybe 0 (readMaybe (filter (not . isSpace) contents)))
+      -- Strict read. A lazy 'Prelude.readFile' leaves the handle open until the
+      -- contents thunk is forced, and the very next 'writeCounter' (which is
+      -- 'withFile' in WriteMode) on the same path then dies with "resource busy
+      -- (file is locked)" under GHC's single-writer file locking. Reading
+      -- strictly closes the handle before we return. See handleChallenge, which
+      -- reads then immediately rewrites critique-round.
+      contents <- ByteString.readFile path
+      pure (fromMaybe 0 (readMaybe (filter (not . isSpace) (ByteString.unpack contents))))
 
 writeCounter :: FilePath -> Int -> IO ()
 writeCounter path n = writeFile path (show n)

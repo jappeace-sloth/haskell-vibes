@@ -12,6 +12,7 @@ import Gate.Edit (Edit (..), Replacement (..), editFilePath, parseEditFromTool)
 import Gate.RecordEdit (SkipReason (..), pathSkipReason)
 import Gate.ReviewPrompt (hasViolations)
 import Gate.Transcript (turnAssistantText)
+import Gate.TurnState (readCounter, writeCounter)
 import Hedgehog (Gen, Property, forAll, property, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
@@ -35,6 +36,26 @@ tests =
     , editRoundTripTests
     , editPropertyTests
     , critiqueDiffTests
+    , counterTests
+    ]
+
+-- A read-then-write on the same counter file, the exact sequence handleChallenge
+-- runs on critique-round. With a lazy 'readFile' inside 'readCounter' the read
+-- handle is still open when 'writeCounter' opens the path in WriteMode, and GHC's
+-- single-writer file lock aborts with "resource busy (file is locked)". The
+-- assertion is that the cycle completes and round-trips the value.
+counterTests :: TestTree
+counterTests =
+  testGroup
+    "TurnState counters"
+    [ testCase "readCounter then writeCounter on the same path does not lock" $ do
+        dir <- getTemporaryDirectory
+        let path = dir </> "vibes-gate-counter-roundtrip"
+        writeCounter path 1
+        previous <- readCounter path
+        writeCounter path (previous + 1)
+        final <- readCounter path
+        final @?= 2
     ]
 
 -- The critique claims-extraction end to end: write a transcript file and ask the
