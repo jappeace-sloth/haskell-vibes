@@ -188,10 +188,14 @@ in
 {
   inherit env entrypoint;
 
-  # The pinned nixpkgs source path, exposed so the nspawn launcher can point
-  # NIX_PATH at it (the docker backend gets the same value from the image's
-  # Env below). Without this, `<nixpkgs>` is absent inside the nspawn
-  # container and `nix-shell -p ...` fails.
+  # Decision: expose the pinned nixpkgs source as its own output attribute so
+  # the nspawn launcher can set NIX_PATH=nixpkgs=<this> (the docker backend
+  # gets the same value from the image's Env below). Without it `<nixpkgs>` is
+  # absent inside the nspawn container and `nix-shell -p ...` fails.
+  # Alternative considered: have claude.sh derive the path itself with a
+  # standalone `nix eval -E 'import ./npins ...'` expression. Rejected because
+  # it would duplicate the npins import and pkgs.path logic that already lives
+  # here, letting the two drift; a single source of truth is preferable.
   nixpkgsPath = toString pkgs.path;
 
   image = pkgs.dockerTools.buildImage {
