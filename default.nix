@@ -105,6 +105,7 @@ let
       pkgs.claude-code
       pkgs.cowsay
       pkgs.util-linux
+      pkgs.imagemagick # convert/mogrify/identify for image editing
       pkgs.jq
       pkgs.openssh
       pkgs.iana-etc
@@ -134,6 +135,20 @@ let
     # nix store paths. Store symlinks created by writeTextDir break when nix
     # GC runs inside the container.
     cp ${./nix.conf} $out/etc/nix/nix.conf
+    # The store copy is read-only; make it writable to append the line below.
+    chmod u+w $out/etc/nix/nix.conf
+    # Decision: resolve `<nixpkgs>` by baking `nix-path` into the image's
+    # nix.conf, pointing at the same pinned source the image was built from.
+    # The container then resolves it on its own, so `nix-shell -p ...` works
+    # under both backends with no launch-time setup.
+    # Alternatives considered: (1) set NIX_PATH in each launcher. Rejected
+    # because nspawn's --setenv list replaces the environment wholesale (it
+    # doesn't inherit the image's Env), so the value had to be computed on the
+    # host and injected per-backend, duplicating the path plumbing. (2) export
+    # a nixpkgsPath attribute for the launcher to read. Rejected for the same
+    # reason: it pushed launch-time path injection onto every backend instead
+    # of letting the container configure itself once, here.
+    echo "nix-path = nixpkgs=${pkgs.path}" >> $out/etc/nix/nix.conf
     cp ${./builder-ssh-config} $out/etc/nix/builder-ssh-config
     cp ${systemPasswd} $out/etc/passwd
 
@@ -203,8 +218,9 @@ in
         "NODE_OPTIONS=--dns-result-order=ipv4first"
         "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
         # docker-entrypoint.sh starts nix-daemon locally in the container
+        # `<nixpkgs>` resolves via the nix-path setting baked into nix.conf
+        # (setup-env above), so no NIX_PATH is set here.
         "PATH=/bin:/nix/var/nix/profiles/default/bin"
-        "NIX_PATH=nixpkgs=${pkgs.path}"
       ];
       WorkingDir = "/home/claude";
     };
