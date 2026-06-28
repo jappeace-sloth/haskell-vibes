@@ -154,12 +154,6 @@ launch_nspawn() {
     ENV_PATH=$(nix-build "${NIX_ARGS_ARRAY[@]}" -A env --no-out-link)
     ENTRYPOINT_PATH=$(nix-build "${NIX_ARGS_ARRAY[@]}" -A entrypoint --no-out-link)
 
-    # The pinned nixpkgs source path, for NIX_PATH below. nspawn's --setenv list
-    # replaces the container environment wholesale (it does not inherit the
-    # docker image's Env), so NIX_PATH must be passed explicitly here or
-    # `<nixpkgs>` is unset inside and `nix-shell -p ...` fails.
-    NIXPKGS_PATH=$(nix-instantiate --eval --raw "${NIX_ARGS_ARRAY[@]}" -A nixpkgsPath)
-
     # systemd-nspawn writes a `.#machine.<hash>` lock file in the parent dir of
     # --directory= before booting. /nix/store is read-only, so we point it at a
     # per-launch copy under /tmp instead. The env is a tree of symlinks into
@@ -250,7 +244,6 @@ launch_nspawn() {
         --setenv=HOME=/home/claude \
         --setenv=USER=claude \
         --setenv=PATH=/bin:/nix/var/nix/profiles/default/bin \
-        --setenv=NIX_PATH=nixpkgs="$NIXPKGS_PATH" \
         --setenv=SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt \
         --setenv=NODE_OPTIONS=--dns-result-order=ipv4first \
         --setenv=CLAUDE_UID="$(id -u)" \

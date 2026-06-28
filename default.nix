@@ -135,6 +135,13 @@ let
     # nix store paths. Store symlinks created by writeTextDir break when nix
     # GC runs inside the container.
     cp ${./nix.conf} $out/etc/nix/nix.conf
+    # The store copy is read-only; make it writable to append the line below.
+    chmod u+w $out/etc/nix/nix.conf
+    # Make `<nixpkgs>` resolve to the same pinned source the image was built
+    # from. Baking it into nix.conf means the container resolves it on its own,
+    # so `nix-shell -p ...` works under both backends without any NIX_PATH env
+    # var being injected at launch (nspawn doesn't inherit the image's Env).
+    echo "nix-path = nixpkgs=${pkgs.path}" >> $out/etc/nix/nix.conf
     cp ${./builder-ssh-config} $out/etc/nix/builder-ssh-config
     cp ${systemPasswd} $out/etc/passwd
 
@@ -188,16 +195,6 @@ in
 {
   inherit env entrypoint;
 
-  # Decision: expose the pinned nixpkgs source as its own output attribute so
-  # the nspawn launcher can set NIX_PATH=nixpkgs=<this> (the docker backend
-  # gets the same value from the image's Env below). Without it `<nixpkgs>` is
-  # absent inside the nspawn container and `nix-shell -p ...` fails.
-  # Alternative considered: have claude.sh derive the path itself with a
-  # standalone `nix eval -E 'import ./npins ...'` expression. Rejected because
-  # it would duplicate the npins import and pkgs.path logic that already lives
-  # here, letting the two drift; a single source of truth is preferable.
-  nixpkgsPath = toString pkgs.path;
-
   image = pkgs.dockerTools.buildImage {
     name = "claude-env";
     tag = "latest";
@@ -214,8 +211,9 @@ in
         "NODE_OPTIONS=--dns-result-order=ipv4first"
         "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
         # docker-entrypoint.sh starts nix-daemon locally in the container
+        # `<nixpkgs>` resolves via the nix-path setting baked into nix.conf
+        # (setup-env above), so no NIX_PATH is set here.
         "PATH=/bin:/nix/var/nix/profiles/default/bin"
-        "NIX_PATH=nixpkgs=${pkgs.path}"
       ];
       WorkingDir = "/home/claude";
     };
