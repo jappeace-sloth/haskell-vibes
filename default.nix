@@ -137,10 +137,17 @@ let
     cp ${./nix.conf} $out/etc/nix/nix.conf
     # The store copy is read-only; make it writable to append the line below.
     chmod u+w $out/etc/nix/nix.conf
-    # Make `<nixpkgs>` resolve to the same pinned source the image was built
-    # from. Baking it into nix.conf means the container resolves it on its own,
-    # so `nix-shell -p ...` works under both backends without any NIX_PATH env
-    # var being injected at launch (nspawn doesn't inherit the image's Env).
+    # Decision: resolve `<nixpkgs>` by baking `nix-path` into the image's
+    # nix.conf, pointing at the same pinned source the image was built from.
+    # The container then resolves it on its own, so `nix-shell -p ...` works
+    # under both backends with no launch-time setup.
+    # Alternatives considered: (1) set NIX_PATH in each launcher. Rejected
+    # because nspawn's --setenv list replaces the environment wholesale (it
+    # doesn't inherit the image's Env), so the value had to be computed on the
+    # host and injected per-backend, duplicating the path plumbing. (2) export
+    # a nixpkgsPath attribute for the launcher to read. Rejected for the same
+    # reason: it pushed launch-time path injection onto every backend instead
+    # of letting the container configure itself once, here.
     echo "nix-path = nixpkgs=${pkgs.path}" >> $out/etc/nix/nix.conf
     cp ${./builder-ssh-config} $out/etc/nix/builder-ssh-config
     cp ${systemPasswd} $out/etc/passwd
