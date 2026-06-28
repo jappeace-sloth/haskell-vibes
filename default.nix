@@ -105,6 +105,7 @@ let
       pkgs.claude-code
       pkgs.cowsay
       pkgs.util-linux
+      pkgs.imagemagick # convert/mogrify/identify for image editing
       pkgs.jq
       pkgs.openssh
       pkgs.iana-etc
@@ -186,6 +187,12 @@ in
 
 {
   inherit env entrypoint;
+
+  # The pinned nixpkgs source path, exposed so the nspawn launcher can point
+  # NIX_PATH at it (the docker backend gets the same value from the image's
+  # Env below). Without this, `<nixpkgs>` is absent inside the nspawn
+  # container and `nix-shell -p ...` fails.
+  nixpkgsPath = toString pkgs.path;
 
   image = pkgs.dockerTools.buildImage {
     name = "claude-env";
