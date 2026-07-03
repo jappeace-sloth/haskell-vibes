@@ -51,6 +51,7 @@ Each instance has its own project clones so two instances can work on the same p
 - Don't use list comprehensions, prefer normal recursion or do syntax.
 - Don't use guards in pattern matches, use if then else instead. Use multiway if for many comparisons.
 - Avoid using error in pure code and instead push errors into the typesignature, use a sumtype to encode all possible errors. In IO, or anything implementing MonadIO you can just crash.
+- Consider splitting out where blocks if they have more then 4 bindings into new top level functions
 
 # Testing
 - A test should be less complex then the implementation.
