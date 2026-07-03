@@ -49,7 +49,7 @@ Each instance has its own project clones so two instances can work on the same p
 - Variables with primitive types used in various place, eg more then 3 functions, should get a newtype with an appropriate name.
 - Boolean variables should get an appropriate sumtype with good constructor names if used in various places to prevent boolean blindness.
 - Don't use list comprehensions, prefer normal recursion or do syntax.
-- Don't use guards in pattern matches, use if then else instead.
+- Don't use guards in pattern matches, use if then else instead. Use multiway if for many comparisons.
 
 # Testing
 - A test should be less complex then the implementation.
