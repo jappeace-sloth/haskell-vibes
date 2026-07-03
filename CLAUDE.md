@@ -46,6 +46,8 @@ Each instance has its own project clones so two instances can work on the same p
 - Avoid introducing local functions via `let` or `where`. Prefer top-level definitions with explicit type signatures so they can be reused, tested, and grepped.
 - Never allow silent failure. A failure that is swallowed (a default returned in place of an error, a `Nothing`/`Left` dropped, an empty list where a value was required, a caught-and-ignored exception) hides bugs until they surface somewhere far away. Two acceptable responses to a failure: (1) make it impossible in the type system, so the illegal state cannot be represented and the compiler rejects it, or (2) crash loudly with a descriptive message (`error`, `throwIO`) so it is seen immediately. Prefer (1). A benign-looking fallback that masks a real error is the worst option.
 - Try keep Haskell modules below 1000 lines, if more split them up.
+- Variables with primitive types used in various place, eg more then 3 functions, should get a newtype with an appropriate name.
+- Boolean variables should get an appropriate sumtype with good constructor names if used in various places to prevent boolean blindness.
 
 # Testing
 - A test should be less complex then the implementation.
