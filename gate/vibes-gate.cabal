@@ -66,6 +66,7 @@ library
       Gate.Corpus
       Gate.FileContext
       Gate.Repo
+      Gate.SpawnAnnotation
       Gate.GateConfig
       Gate.EditStack
       Gate.NestedClaude
@@ -83,6 +84,7 @@ library
       src
   build-depends:
       aeson,
+      annotated-exception,
       bytestring,
       text,
       directory,

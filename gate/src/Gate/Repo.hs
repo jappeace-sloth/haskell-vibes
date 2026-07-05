@@ -11,18 +11,45 @@ module Gate.Repo
   ) where
 
 import Data.ByteString.Lazy.Char8 qualified as LazyChar8
+import System.Directory (findExecutable)
 import System.Exit (ExitCode (ExitFailure, ExitSuccess))
 import System.FilePath (takeDirectory)
 import System.Process.Typed (proc, readProcess)
 
--- | The git work-tree root containing a directory, or Nothing if it is not in a
--- repository.
+import Gate.SpawnAnnotation (annotateSpawn)
+
+-- | The git work-tree root containing a directory. 'Nothing' when the directory
+-- is not in a repository, or when @git@ is not on @PATH@ at all.
+--
+-- Decision: guard the spawn with 'findExecutable' rather than spawning blind.
+-- A missing @git@, or a @\/bin\/git@ symlink left dangling by a nix
+-- garbage-collection, otherwise crashes the whole Stop hook on @posix_spawnp@;
+-- declining to resolve a root lets the caller skip that reviewer instead. This
+-- mirrors the @findExecutable "claude"@ guard the reviewers already use.
+-- Alternative considered: catch the spawn exception; rejected because the
+-- pre-flight check keeps the not-installed path explicit and never swallows a
+-- genuine spawn failure of a @git@ that IS present.
 gitRoot :: FilePath -> IO (Maybe FilePath)
 gitRoot dir = do
-  (exitCode, out, _err) <- readProcess (proc "git" ["-C", dir, "rev-parse", "--show-toplevel"])
-  pure $ case LazyChar8.lines out of
-    (root : _) | isSuccess exitCode && not (LazyChar8.null root) -> Just (LazyChar8.unpack root)
-    _noRoot -> Nothing
+  gitOnPath <- findExecutable "git"
+  case gitOnPath of
+    Nothing -> pure Nothing
+    Just _ -> do
+      (exitCode, out, _err) <-
+        annotateSpawn ("git -C " <> dir <> " rev-parse --show-toplevel") $
+          readProcess (proc "git" ["-C", dir, "rev-parse", "--show-toplevel"])
+      pure (parseTopLevel exitCode out)
+
+-- | The first line of @git rev-parse --show-toplevel@ output is the work-tree
+-- root on success; a failing exit or empty output means not-a-repository.
+parseTopLevel :: ExitCode -> LazyChar8.ByteString -> Maybe FilePath
+parseTopLevel exitCode out =
+  case LazyChar8.lines out of
+    (root : _) ->
+      if isSuccess exitCode && not (LazyChar8.null root)
+        then Just (LazyChar8.unpack root)
+        else Nothing
+    [] -> Nothing
 
 isSuccess :: ExitCode -> Bool
 isSuccess = \case
