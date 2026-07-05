@@ -23,6 +23,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding (decodeUtf8Lenient, encodeUtf8)
 import Gate.HookProtocol (BlockReason (BlockReason), blockAndExitWithNotice)
+import Gate.SpawnAnnotation (annotateSpawn)
 import Gate.TurnState (flagExists, writeFlag)
 import System.Directory (createDirectoryIfMissing)
 import System.Environment (getEnvironment, lookupEnv)
@@ -58,7 +59,7 @@ runNested reviewer prompt = do
           . setEnv (guardEnv baseEnv)
           . maybe id setWorkingDir (reviewerWorkdir reviewer)
       reviewerProcess = configure (proc "timeout" (timeoutArgs reviewer))
-  outcome <- tryAny (readProcess reviewerProcess)
+  outcome <- tryAny (annotateSpawn (nestedSpawnLabel reviewer) (readProcess reviewerProcess))
   pure $ case outcome of
     Left err -> NestedBroken 1 True (Text.pack (displayException err))
     Right (exitCode, out, errOut) -> interpret exitCode (decodeLazy out) (decodeLazy errOut)
@@ -89,6 +90,14 @@ timeoutArgs reviewer =
 
 readOnlyArgs :: [String]
 readOnlyArgs = ["--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "--tools", "Read", "Grep", "Glob"]
+
+-- | A label for the nested reviewer spawn, attached to any spawn failure so a
+-- broken 'NestedResult' names which reviewer's process could not start (rather
+-- than a bare @timeout: posix_spawnp@). Keyed by model, which distinguishes the
+-- canary, rule reviewer and critic.
+nestedSpawnLabel :: Reviewer -> String
+nestedSpawnLabel reviewer =
+  "timeout claude (nested " <> Text.unpack (reviewerModel reviewer) <> " reviewer)"
 
 -- | Disable every gate phase in the nested reviewer's environment so its own
 -- Stop hook cannot recurse into this gate.

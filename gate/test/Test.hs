@@ -1,8 +1,10 @@
 module Main (main) where
 
+import Control.Exception (ErrorCall (ErrorCall), SomeException, displayException, throwIO, try)
 import Data.Aeson (Result (Success), Value, eitherDecode, eitherDecodeStrict, encode, fromJSON, toJSON)
 import Data.ByteString.Lazy qualified as LazyByteString
 import Data.ByteString.Char8 qualified as ByteString
+import Data.List (isInfixOf)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Gate.Corpus (selectSkills)
@@ -11,6 +13,7 @@ import Gate.DiffRender (renderDiffs)
 import Gate.Edit (Edit (..), Replacement (..), editFilePath, parseEditFromTool)
 import Gate.RecordEdit (SkipReason (..), pathSkipReason)
 import Gate.ReviewPrompt (hasViolations)
+import Gate.SpawnAnnotation (annotateSpawn)
 import Gate.Transcript (turnAssistantText)
 import Gate.TurnState (readCounter, writeCounter)
 import Hedgehog (Gen, Property, forAll, property, (===))
@@ -20,7 +23,7 @@ import System.Directory (getTemporaryDirectory)
 import System.FilePath ((</>))
 import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.Hedgehog (testProperty)
-import Test.Tasty.HUnit (assertBool, testCase, (@?=))
+import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 
 main :: IO ()
 main = defaultMain tests
@@ -37,6 +40,28 @@ tests =
     , editPropertyTests
     , critiqueDiffTests
     , counterTests
+    , spawnAnnotationTests
+    ]
+
+-- A spawn that fails (a missing binary, or a /bin symlink left dangling by a
+-- nix GC) must not vanish into a bare posix_spawnp error: 'annotateSpawn' tags
+-- the exception with its command so an uncaught crash, or a displayException of
+-- a caught one, names the call site. The assertion drives a real exception
+-- through 'annotateSpawn' and checks the label survives into displayException.
+
+spawnAnnotationTests :: TestTree
+spawnAnnotationTests =
+  testGroup
+    "annotateSpawn"
+    [ testCase "a failing spawn carries its call site into displayException" $ do
+        let spawnLabel = "git -C /x rev-parse --show-toplevel"
+        outcome <- try (annotateSpawn spawnLabel (throwIO (ErrorCall "spawn blew up")))
+        case (outcome :: Either SomeException ()) of
+          Right () -> assertFailure "expected the wrapped action to throw"
+          Left err ->
+            assertBool
+              "displayException names the spawn call site"
+              (spawnLabel `isInfixOf` displayException err)
     ]
 
 -- A read-then-write on the same counter file, the exact sequence handleChallenge
