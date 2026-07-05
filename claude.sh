@@ -150,9 +150,21 @@ launch_docker() {
 launch_nspawn() {
     NIX_ARGS_ARRAY=(./default.nix --arg uid "$(id -u)" --arg gid "$(id -g)")
 
-    # Build the rootfs env and the entrypoint script.
-    ENV_PATH=$(nix-build "${NIX_ARGS_ARRAY[@]}" -A env --no-out-link)
-    ENTRYPOINT_PATH=$(nix-build "${NIX_ARGS_ARRAY[@]}" -A entrypoint --no-out-link)
+    # Build the rootfs env and the entrypoint script, keeping the result
+    # symlinks as GC roots under gcroots/ instead of passing --no-out-link.
+    # Without a root the closure is unreferenced the instant nix-build returns,
+    # so a `nix-collect-garbage` from any instance deletes the toolchain out
+    # from under every running machine: a GC run inside a container only sees
+    # its own /proc, not the other containers' live processes, so their
+    # binaries look unreferenced and get collected, leaving dangling /bin/git
+    # and friends. The roots live in the checkout (not /tmp) so they survive
+    # reboots and re-launches, and nix-build still prints the store path to
+    # stdout so ENV_PATH/ENTRYPOINT_PATH are unchanged. Re-launching an instance
+    # overwrites its own root; only distinct instance names accumulate roots.
+    GCROOTS_DIR="$(pwd)/gcroots"
+    mkdir -p "$GCROOTS_DIR"
+    ENV_PATH=$(nix-build "${NIX_ARGS_ARRAY[@]}" -A env --out-link "$GCROOTS_DIR/${INSTANCE_NAME}-env")
+    ENTRYPOINT_PATH=$(nix-build "${NIX_ARGS_ARRAY[@]}" -A entrypoint --out-link "$GCROOTS_DIR/${INSTANCE_NAME}-entrypoint")
 
     # systemd-nspawn writes a `.#machine.<hash>` lock file in the parent dir of
     # --directory= before booting. /nix/store is read-only, so we point it at a
