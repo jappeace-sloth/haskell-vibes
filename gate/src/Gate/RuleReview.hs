@@ -17,10 +17,10 @@ import Gate.Corpus (buildCorpus)
 import Gate.DiffRender (renderDiffs)
 import Gate.EditStack (readEdits, returnClaimedToStack, stackFilePaths)
 import Gate.FileContext (renderFullFiles)
-import Gate.GateConfig (envInt, phaseDisabled)
+import Gate.GateConfig (envInt, envStr, phaseDisabled)
 import Gate.HookProtocol (BlockReason (BlockReason), blockAndExit)
 import Gate.NestedClaude (NestedResult (NestedBroken, NestedOutput), Reviewer (Reviewer), runNested, surfaceNestedFailure)
-import Gate.ReviewPrompt (buildReviewPrompt, hasViolations, reviewBlockReason, reviewerModel)
+import Gate.ReviewPrompt (buildReviewPrompt, hasViolations, reviewBlockReason)
 import Gate.TurnState
   ( TurnPaths (claimedStack, reviewApproved, reviewBroke, reviewStack)
   , claimReviewStack
@@ -49,7 +49,15 @@ reviewClaimed session paths = do
   corpus <- buildCorpus files
   fullFiles <- renderFullFiles files
   timeoutSecs <- envInt "CLAUDE_RULE_REVIEW_TIMEOUT" 300
-  let reviewer = Reviewer reviewerModel True timeoutSecs Nothing
+  -- Phase A reviewer model. Decision: Sonnet rather than Haiku. The review only
+  -- fires on turns that edited files and batches that turn's diffs into one call,
+  -- so cost is per-edit-turn, not per-Stop, and the extra reasoning catches
+  -- semantic violations (silent failures, tests asserting static content) a
+  -- smaller model misses. The main-loop model is still the final judge. Read via
+  -- the env, defaulting to the current Sonnet, so bumping the model to the next
+  -- generation needs no rebuild, matching CLAUDE_CRITIQUE_MODEL / CLAUDE_DUMBIFY_MODEL.
+  model <- envStr "CLAUDE_REVIEWER_MODEL" "claude-sonnet-5"
+  let reviewer = Reviewer model True timeoutSecs Nothing
       prompt = buildReviewPrompt corpus (renderDiffs edits) fullFiles
   result <- runNested reviewer prompt
   case result of
@@ -57,9 +65,9 @@ reviewClaimed session paths = do
       -- Do not lose the diffs: return them to the stack so the next Stop
       -- re-reviews once the reviewer works again, then surface the failure.
       returnClaimedToStack paths
-      surfaceNestedFailure session "rule review" reviewerModel exitCode emptyOut stderrText (reviewBroke paths)
+      surfaceNestedFailure session "rule review" model exitCode emptyOut stderrText (reviewBroke paths)
     NestedOutput output -> do
       removeIfExists (claimedStack paths)
       if hasViolations output
-        then blockAndExit (BlockReason (reviewBlockReason output))
+        then blockAndExit (BlockReason (reviewBlockReason model output))
         else writeFlag (reviewApproved paths)
