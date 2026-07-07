@@ -154,7 +154,7 @@ launch_docker() {
         "${CONFIG_MOUNTS[@]}" \
         -v "$(pwd)/../vibes/$INSTANCE_NAME":/home/claude/vibes \
         `# shared read-only client-deliveries inbox, synced by Syncthing host-side` \
-        -v "$AANLEVERINGEN_DIR:/home/claude/aanleveringen:ro" \
+        -v "$AANLEVERINGEN_DIR":/home/claude/aanleveringen:ro \
         `# character is snapshotted (above) and mounted even in vanilla mode` \
         -v "$CONFIG_SNAPSHOT/character":/home/claude/character \
         --rm \
