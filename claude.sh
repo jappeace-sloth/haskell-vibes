@@ -34,6 +34,9 @@ mkdir -p "../vibes/$INSTANCE_NAME"
 # per-instance ../vibes/<name> dirs, because Syncthing (jappeace/linux-config)
 # needs a stable absolute path to sync this folder across work-machine,
 # lenovo-amd-2022 and lenovo-tablet, and both repos must name the same path.
+# The paths line up because claude.sh runs on the host as jappie, so $HOME
+# here is /home/jappie, matching the /home/jappie/aanleveringen the Syncthing
+# config hard-codes.
 # Read-only into the instance: files arrive host-side via Syncthing (merchant
 # uploads from Elizabeth/kruidje and Ellen/waardegebaar), instances only read.
 # Alternative considered: a per-instance writable share, rejected so a runaway
@@ -151,7 +154,7 @@ launch_docker() {
         "${CONFIG_MOUNTS[@]}" \
         -v "$(pwd)/../vibes/$INSTANCE_NAME":/home/claude/vibes \
         `# shared read-only client-deliveries inbox, synced by Syncthing host-side` \
-        -v "$AANLEVERINGEN_DIR:/home/claude/aanleveringen:ro" \
+        -v "$AANLEVERINGEN_DIR":/home/claude/aanleveringen:ro \
         `# character is snapshotted (above) and mounted even in vanilla mode` \
         -v "$CONFIG_SNAPSHOT/character":/home/claude/character \
         --rm \
