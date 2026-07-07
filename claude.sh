@@ -34,6 +34,9 @@ mkdir -p "../vibes/$INSTANCE_NAME"
 # per-instance ../vibes/<name> dirs, because Syncthing (jappeace/linux-config)
 # needs a stable absolute path to sync this folder across work-machine,
 # lenovo-amd-2022 and lenovo-tablet, and both repos must name the same path.
+# The paths line up because claude.sh runs on the host as jappie, so $HOME
+# here is /home/jappie, matching the /home/jappie/aanleveringen the Syncthing
+# config hard-codes.
 # Read-only into the instance: files arrive host-side via Syncthing (merchant
 # uploads from Elizabeth/kruidje and Ellen/waardegebaar), instances only read.
 # Alternative considered: a per-instance writable share, rejected so a runaway
