@@ -25,6 +25,13 @@
 The vibes folder is per-instance (mounted from `../vibes/$INSTANCE_NAME`).
 Each instance has its own project clones so two instances can work on the same project simultaneously.
 
+The `~/aanleveringen` folder is a shared, READ-ONLY client-deliveries inbox
+(mounted from the host's `$HOME/aanleveringen`). Files land here host-side via
+Syncthing (merchant uploads, e.g. Elizabeth/kruidje and Ellen/waardegebaar) and
+are synced across work-machine, lenovo-amd-2022 and lenovo-tablet. It is shared
+by every instance and read-only: read the files, copy what you need into your
+own project clone, but you cannot write back into it.
+
 # Prose / writing style
 - Never use a mid-line em-dash (`---` or `—`) inside a sentence. It is a
   strong AI tell and grates on the reader. This applies to all prose:

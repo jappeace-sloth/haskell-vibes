@@ -28,6 +28,19 @@ done
 
 mkdir -p "../vibes/$INSTANCE_NAME"
 
+# Decision: shared read-only "aanleveringen" (client deliveries) inbox, mounted
+# into every instance at /home/claude/aanleveringen. Chosen as a single fixed
+# absolute host path ($HOME/aanleveringen) rather than a sibling of the
+# per-instance ../vibes/<name> dirs, because Syncthing (jappeace/linux-config)
+# needs a stable absolute path to sync this folder across work-machine,
+# lenovo-amd-2022 and lenovo-tablet, and both repos must name the same path.
+# Read-only into the instance: files arrive host-side via Syncthing (merchant
+# uploads from Elizabeth/kruidje and Ellen/waardegebaar), instances only read.
+# Alternative considered: a per-instance writable share, rejected so a runaway
+# instance cannot corrupt the synced source of truth.
+AANLEVERINGEN_DIR="$HOME/aanleveringen"
+mkdir -p "$AANLEVERINGEN_DIR"
+
 INSTANCE_DIR="$(pwd)/instances/$INSTANCE_NAME"
 INSTANCE_JSON="$(pwd)/instances/${INSTANCE_NAME}.json"
 
@@ -137,6 +150,8 @@ launch_docker() {
         -v "$(pwd)/settings.json":/home/claude/.claude/settings.json \
         "${CONFIG_MOUNTS[@]}" \
         -v "$(pwd)/../vibes/$INSTANCE_NAME":/home/claude/vibes \
+        `# shared read-only client-deliveries inbox, synced by Syncthing host-side` \
+        -v "$AANLEVERINGEN_DIR:/home/claude/aanleveringen:ro" \
         `# character is snapshotted (above) and mounted even in vanilla mode` \
         -v "$CONFIG_SNAPSHOT/character":/home/claude/character \
         --rm \
@@ -189,6 +204,7 @@ launch_nspawn() {
         "$RUNTIME_ROOT/home/claude/.ssh" \
         "$RUNTIME_ROOT/home/claude/.claude" \
         "$RUNTIME_ROOT/home/claude/vibes" \
+        "$RUNTIME_ROOT/home/claude/aanleveringen" \
         "$RUNTIME_ROOT/home/claude/character"
     touch "$RUNTIME_ROOT/home/claude/.claude.json"
 
@@ -246,6 +262,8 @@ launch_nspawn() {
         --bind="$(pwd)/settings.json:/home/claude/.claude/settings.json" \
         "${CONFIG_BINDS[@]}" \
         --bind="$(pwd)/../vibes/$INSTANCE_NAME:/home/claude/vibes" \
+        `# shared read-only client-deliveries inbox, synced by Syncthing host-side` \
+        --bind-ro="$AANLEVERINGEN_DIR:/home/claude/aanleveringen" \
         `# character is snapshotted (above) and mounted even in vanilla mode` \
         --bind-ro="$CONFIG_SNAPSHOT/character:/home/claude/character" \
         --bind-ro="$HOME/.ssh/sloth:/home/claude/.ssh/id_ed25519" \
