@@ -4,8 +4,7 @@
 -- "Gate.RuleReview", makes the wording easy to find and edit without wading
 -- through control flow.
 module Gate.ReviewPrompt
-  ( reviewerModel
-  , buildReviewPrompt
+  ( buildReviewPrompt
   , maxDiffPromptChars
   , hasViolations
   , reviewBlockReason
@@ -13,14 +12,6 @@ module Gate.ReviewPrompt
 
 import Data.Text (Text)
 import Data.Text qualified as Text
-
--- | Phase A reviewer model. Decision: Sonnet rather than Haiku. The review only
--- fires on turns that edited files and batches that turn's diffs into one call,
--- so cost is per-edit-turn, not per-Stop, and the extra reasoning catches
--- semantic violations (silent failures, tests asserting static content) a
--- smaller model misses. The main-loop model is still the final judge.
-reviewerModel :: Text
-reviewerModel = "claude-sonnet-4-6"
 
 -- | The rendered diffs are truncated to this many characters so a giant turn
 -- cannot blow up the reviewer prompt. Matches the shell hook's @head -c 40000@.
@@ -98,10 +89,10 @@ hasViolations reviewOutput =
 -- | The block reason shown to the main-loop model when the reviewer flags
 -- something. It frames the model as the final judge: fix or rebut, never
 -- silently ignore.
-reviewBlockReason :: Text -> Text
-reviewBlockReason reviewOutput =
+reviewBlockReason :: Text -> Text -> Text
+reviewBlockReason model reviewOutput =
   Text.concat
-    [ "A ", reviewerModel, " reviewer flagged possible rule violations in the diffs you just applied.\n"
+    [ "A ", model, " reviewer flagged possible rule violations in the diffs you just applied.\n"
     , "You are the larger model and the final judge. For each finding, either:\n"
     , "  1. Agree: edit the file to fix it (the fix is re-reviewed automatically), or\n"
     , "  2. Disagree: explain to the user why the finding is wrong (the reviewer misread\n"
