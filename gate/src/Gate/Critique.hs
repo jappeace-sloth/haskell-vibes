@@ -2,8 +2,10 @@
 --
 -- A fresh independent critic (default Opus, full tools and MCP) tries to PROVE
 -- THE WORKER WRONG about both the code it changed and the claims it made this
--- turn, by running tests and commands and searching authoritative sources. A
--- substantiated CHALLENGE blocks the turn. The critic is an advisor, not a wall:
+-- turn, by running tests and commands and searching authoritative sources. It
+-- also flags any factual claim it can find no supporting source for, since an
+-- assertion the worker cannot back is itself evidence. A substantiated
+-- CHALLENGE blocks the turn. The critic is an advisor, not a wall:
 -- exactly like dumbify, convergence is observed via the edit stack, so a turn
 -- with no new edits (the worker stood by its work) is a shrug that ends the
 -- debate. Runs after dumbify (so it verifies the canary's refactor too) and
@@ -138,7 +140,9 @@ critiqueHeader =
   \just finished a turn. Below are the code changes it made (possibly none) and the\n\
   \claims it made about what it did or found. Your single job is to PROVE THE WORKER\n\
   \WRONG, by any means necessary. Assume both the code and the claims are wrong until\n\
-  \you have evidence otherwise.\n\
+  \you have evidence otherwise. A factual claim you can neither reproduce nor find any\n\
+  \authoritative source for does not earn the benefit of the doubt: an assertion the\n\
+  \worker cannot back is a weakness to surface, not something to wave through.\n\
   \\n\
   \Use every tool you have to gather counter-evidence:\n\
   \\n\
@@ -147,9 +151,12 @@ critiqueHeader =
   \  conditions, unhandled cases, off-by-one, broken invariants, missing coverage)\n\
   \  and ways the change breaks the rest of the codebase.\n\
   \- For prose/claims: check them against reality. Run the command the worker says\n\
-  \  it ran. Search the web and read authoritative sources to contradict a factual\n\
-  \  claim. A claim of \"I verified X\" that was never actually demonstrated is itself\n\
-  \  suspect.\n\
+  \  it ran. Search the web and read authoritative sources, both to contradict a\n\
+  \  factual claim and to look for the support the worker never cited. A claim of\n\
+  \  \"I verified X\" that was never actually demonstrated is itself suspect. When\n\
+  \  the worker states a checkable fact as established (attributing a view to\n\
+  \  someone, quoting a spec, describing what a tool or library does), actively try\n\
+  \  to find the authoritative source that backs it.\n\
   \\n\
   \Rank your counter-evidence by authority, and gather as much as you can:\n\
   \\n\
@@ -157,10 +164,19 @@ critiqueHeader =
   \  output. A machine cannot misreport these.\n\
   \- Good: an authoritative external source (documentation, a standard, a primary\n\
   \  source) that contradicts the claim. Cite the URL and quote the line.\n\
+  \- Also evidence: the ABSENCE of a source. If the worker asserts a checkable fact\n\
+  \  as established and you genuinely search for it (authoritative docs, the primary\n\
+  \  source, the web) and find nothing that supports it, report that. Your evidence\n\
+  \  is the search itself: name the queries you ran and the sources you checked, show\n\
+  \  they turned up nothing backing the claim, and ask why the worker is asserting it.\n\
+  \  Absence only counts once you have actually looked, so \"I did not look\" is not\n\
+  \  \"no source exists\". This is for facts presented as established, not for the\n\
+  \  worker's own clearly-labelled opinions, recommendations, or plans.\n\
   \- More independent counter-evidence is stronger than one: a test AND a source\n\
   \  beats either alone.\n\
-  \- Not evidence: your own opinion or doubt. If you cannot substantiate a challenge\n\
-  \  with a test, a command, or a cited source, DROP it.\n\
+  \- Not evidence: your own opinion or doubt with no search behind it. If you have\n\
+  \  neither a test, a command, a cited source, nor a documented failed search, DROP\n\
+  \  it.\n\
   \\n\
   \Do not add files to the repository under review; use /tmp for scratch\n\
   \reproducers. Do not flag style, naming, or \"could be cleaner\".\n\
@@ -168,12 +184,15 @@ critiqueHeader =
   \Response format, no markdown:\n\
   \\n\
   \- If you cannot prove anything wrong: respond with the single line OK.\n\
-  \- Otherwise, one block per refuted item:\n\
+  \- Otherwise, one block per item you are challenging:\n\
   \\n\
-  \    CHALLENGE: <one-sentence summary of what is wrong>\n\
-  \    CLAIM: <the worker claim or code behaviour you are refuting>\n\
-  \    EVIDENCE: <the test/command you ran and its output, and/or a source URL with\n\
-  \              the contradicting quote. Concrete and reproducible.>\n\
+  \    CHALLENGE: <one-sentence summary of what is wrong or unsupported>\n\
+  \    CLAIM: <the worker claim or code behaviour you are challenging>\n\
+  \    EVIDENCE: <for a refutation: the test/command you ran and its output, and/or a\n\
+  \              source URL with the contradicting quote. For an unsourced claim: the\n\
+  \              searches you ran, e.g. \"I searched X and Y and found nothing that\n\
+  \              supports Z\", listing the queries and sources checked. Concrete and\n\
+  \              reproducible either way.>\n\
   \    SEVERITY: blocker | major | minor\n\
   \\n\
   \Separate blocks with a blank line."
@@ -185,7 +204,7 @@ critiqueBlockReason model thisRound maxRounds output =
     , "using tests and sources, and produced the counter-evidence below (round "
     , Text.pack (show thisRound), " of ", Text.pack (show maxRounds)
     , "). This critic is an advisor, not a wall: you are the final judge. For each challenge, either:\n"
-    , "  1. Agree: fix the code, or correct the claim. Code fixes are re-critiqued and rule-checked automatically.\n"
+    , "  1. Agree: fix the code, correct the claim, or (for an unsourced factual claim) cite a source or retract it. Code fixes are re-critiqued and rule-checked automatically.\n"
     , "  2. Disagree: rebut it with STRONGER evidence than the critic brought (run the test yourself, cite a better source), or simply stand by your work. Do not just assert.\n"
     , "Engage every challenge, then decide. If you make no further edits, the gate takes that as your considered judgement and moves on (a shrug is allowed); it does not re-litigate. Set CLAUDE_SKIP_CRITIQUE=1 to disable this gate.\n"
     , "\n--- critic challenges ---\n"
