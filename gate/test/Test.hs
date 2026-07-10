@@ -8,7 +8,7 @@ import Data.List (isInfixOf)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Gate.Corpus (selectSkills)
-import Gate.Critique (critiqueDiffBlock)
+import Gate.Critique (RoundBudget (RoundBudget), critiqueAnchor, critiqueDiffBlock, recentClaims)
 import Gate.DiffRender (renderDiffs)
 import Gate.Edit (Edit (..), Replacement (..), editFilePath, parseEditFromTool)
 import Gate.RecordEdit (SkipReason (..), pathSkipReason)
@@ -39,8 +39,50 @@ tests =
     , editRoundTripTests
     , editPropertyTests
     , critiqueDiffTests
+    , recentClaimsTests
+    , critiqueAnchorTests
     , counterTests
     , spawnAnnotationTests
+    ]
+
+-- The claims blob accumulates across a turn's critique rounds and is
+-- chronological, so when it exceeds the budget the critic must keep the NEWEST
+-- claims (the current round) and drop the oldest. A front trim (the old
+-- Text.take) kept the oldest and dropped the newest, which is what fed the critic
+-- stale claims. These assert the tail survives and the head is dropped.
+
+recentClaimsTests :: TestTree
+recentClaimsTests =
+  testGroup
+    "recentClaims"
+    [ testCase "keeps the newest claims and drops the oldest over budget" $ do
+        let oldest = "OLDEST-round-1-run-A"
+            newest = "NEWEST-round-3-run-C"
+            blob = oldest <> Text.replicate 200 "x" <> newest
+            trimmed = recentClaims (Text.length newest + 20) blob
+        assertBool "the current round's claim survives" (Text.isInfixOf newest trimmed)
+        assertBool "the stale first round's claim is dropped" (not (Text.isInfixOf oldest trimmed))
+    , testCase "claims within budget pass through unchanged" $
+        recentClaims 1000 "short claim" @?= "short claim"
+    ]
+
+-- The anchor threads the round and the commit history into the prompt. The one
+-- piece of logic (not static text) is that a missing history is turned into an
+-- explicit placeholder rather than dropped, and a present history is carried
+-- through verbatim so the critic actually sees the real commit order.
+
+critiqueAnchorTests :: TestTree
+critiqueAnchorTests =
+  testGroup
+    "critiqueAnchor"
+    [ testCase "a present commit history is carried through verbatim" $
+        assertBool
+          "the supplied history appears in the anchor"
+          (Text.isInfixOf "deadbeef 2026-07-10T12:00:00Z fix the thing" (critiqueAnchor (RoundBudget 2 3) (Just "deadbeef 2026-07-10T12:00:00Z fix the thing")))
+    , testCase "a missing history becomes an explicit placeholder, not a blank" $
+        assertBool
+          "the placeholder names the missing history"
+          (Text.isInfixOf "unavailable" (critiqueAnchor (RoundBudget 1 2) Nothing))
     ]
 
 -- A spawn that fails (a missing binary, or a /bin symlink left dangling by a

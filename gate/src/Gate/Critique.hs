@@ -4,7 +4,10 @@
 -- THE WORKER WRONG about both the code it changed and the claims it made this
 -- turn, by running tests and commands and searching authoritative sources. It
 -- also flags any factual claim it can find no supporting source for, since an
--- assertion the worker cannot back is itself evidence. A substantiated
+-- assertion the worker cannot back is itself evidence. The prompt is anchored to
+-- ground truth (the round number and the repo's real commit history) so the
+-- critic judges the current state and maps CI runs to commits by sha rather than
+-- reconstructing the order from run timestamps. A substantiated
 -- CHALLENGE blocks the turn. The critic is an advisor, not a wall:
 -- exactly like dumbify, convergence is observed via the edit stack, so a turn
 -- with no new edits (the worker stood by its work) is a shrug that ends the
@@ -13,10 +16,13 @@
 module Gate.Critique
   ( runCritique
   , critiqueDiffBlock
+  , recentClaims
+  , critiqueAnchor
+  , RoundBudget(..)
   ) where
 
 import Control.Monad (when)
-import Data.Maybe (isJust)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as TextIO
@@ -25,7 +31,7 @@ import Gate.EditStack (readEdits, stackFilePaths)
 import Gate.GateConfig (envInt, envStr, phaseDisabled)
 import Gate.HookProtocol (BlockReason (BlockReason), blockAndExit)
 import Gate.NestedClaude (NestedResult (NestedBroken, NestedOutput), Reviewer (Reviewer), runNested, surfaceNestedFailure)
-import Gate.Repo (repoForFilesOrCwd)
+import Gate.Repo (commitHistory, repoForFilesOrCwd)
 import Gate.ReviewPrompt (maxDiffPromptChars)
 import Gate.Transcript (turnAssistantText)
 import Gate.TurnState
@@ -46,6 +52,25 @@ import System.Directory (doesFileExist, findExecutable)
 maxCritiqueClaimChars :: Int
 maxCritiqueClaimChars = 16_000
 
+-- | Keep the most recent claims within the character budget. The worker's prose
+-- accumulates across a turn's critique rounds (a block is not a turn boundary,
+-- so 'turnAssistantText' keeps growing), and it is chronological. Trimming from
+-- the FRONT would hand the critic the OLDEST claims (round 1, the first CI runs)
+-- and drop the newest (the current HEAD's claims), so the critic judges stale
+-- claims and misattributes runs. Trim from the end so the current round survives.
+recentClaims :: Int -> Text -> Text
+recentClaims = Text.takeEnd
+
+-- | Which critique round this is, and the cap it counts against. The two travel
+-- together through the anchor, the block reason, and 'handleChallenge'; bundling
+-- them keeps the round and its cap from being swapped at a call site (both are
+-- 'Int'), and threading one value keeps the number the critic is told identical
+-- to the number the worker is told.
+data RoundBudget = RoundBudget
+  { thisRound :: Int
+  , maxRounds :: Int
+  }
+
 runCritique :: Text -> Maybe FilePath -> TurnPaths -> IO ()
 runCritique session transcript paths = do
   disabled <- phaseDisabled "CLAUDE_SKIP_CRITIQUE"
@@ -64,15 +89,22 @@ runCritique session transcript paths = do
 
 runCritiqueRound :: Text -> Maybe FilePath -> TurnPaths -> Bool -> Int -> IO ()
 runCritiqueRound session transcript paths hasEdits currentMark = do
-  claims <- maybe (pure "") (fmap (Text.take maxCritiqueClaimChars) . turnAssistantText) transcript
+  claims <- maybe (pure "") (fmap (recentClaims maxCritiqueClaimChars) . turnAssistantText) transcript
   files <- stackFilePaths (reviewStack paths)
   diffs <- critiqueDiffBlock hasEdits (reviewStack paths)
   repo <- repoForFilesOrCwd files
+  history <- maybe (pure Nothing) commitHistory repo
   previous <- readPreviousChallenges (critiquePrev paths)
+  previousRound <- readCounter (critiqueRound paths)
+  roundCap <- envInt "CLAUDE_CRITIQUE_MAX_ROUNDS" 2
   timeoutSecs <- envInt "CLAUDE_CRITIQUE_TIMEOUT" 1200
   model <- envStr "CLAUDE_CRITIQUE_MODEL" "claude-opus-4-8"
-  let reviewer = Reviewer model False timeoutSecs repo
-      prompt = critiquePrompt previous claims diffs
+  -- The round is computed once and threaded to both the prompt and the block, so
+  -- the critic is told the same round the worker is (the nested critic runs with
+  -- the critique phase disabled, so it never bumps this counter mid-round).
+  let budget = RoundBudget { thisRound = previousRound + 1, maxRounds = roundCap }
+      reviewer = Reviewer model False timeoutSecs repo
+      prompt = critiquePrompt (critiqueAnchor budget history) previous claims diffs
   result <- runNested reviewer prompt
   case result of
     NestedBroken exitCode emptyOut stderrText -> do
@@ -80,25 +112,22 @@ runCritiqueRound session transcript paths hasEdits currentMark = do
       writeFlag (critiqueDone paths)
     NestedOutput output ->
       if hasChallenge output
-        then handleChallenge paths currentMark model output
+        then handleChallenge paths model output currentMark budget
         else do
           -- Clean OK: critique is done and this turn cleared.
           writeFlag (critiqueDone paths)
           writeFlag (critiqueApproved paths)
 
-handleChallenge :: TurnPaths -> Int -> Text -> Text -> IO ()
-handleChallenge paths currentMark model output = do
-  previousRound <- readCounter (critiqueRound paths)
-  maxRounds <- envInt "CLAUDE_CRITIQUE_MAX_ROUNDS" 2
-  let thisRound = previousRound + 1
-  writeCounter (critiqueRound paths) thisRound
-  if thisRound <= maxRounds
+handleChallenge :: TurnPaths -> Text -> Text -> Int -> RoundBudget -> IO ()
+handleChallenge paths model output currentMark budget = do
+  writeCounter (critiqueRound paths) (thisRound budget)
+  if thisRound budget <= maxRounds budget
     then do
       -- Record this challenge and the stack size it was based on. No new edits
       -- before the next Stop reads as a shrug; new edits earn a fresh critique.
       TextIO.writeFile (critiquePrev paths) output
       writeCounter (critiqueEditmark paths) currentMark
-      blockAndExit (BlockReason (critiqueBlockReason model thisRound maxRounds output))
+      blockAndExit (BlockReason (critiqueBlockReason model budget output))
     else
       -- Round cap reached: stop debating without marking approved (the concern
       -- is unresolved), and let rule review proceed.
@@ -123,15 +152,38 @@ readPreviousChallenges path = do
 hasChallenge :: Text -> Bool
 hasChallenge output = any ("CHALLENGE:" `Text.isPrefixOf`) (Text.lines output)
 
-critiquePrompt :: Maybe Text -> Text -> Text -> Text
-critiquePrompt previous claims diffs =
+critiquePrompt :: Text -> Maybe Text -> Text -> Text -> Text
+critiquePrompt anchor previous claims diffs =
   Text.concat
     [ critiqueHeader
+    , "\n=== GROUND TRUTH (authoritative; use this, do not reconstruct it from timestamps) ===\n"
+    , anchor
     , maybe "" ("\n=== YOUR PREVIOUS CHALLENGES (the worker has since responded and may have changed code or claims; only re-raise what still holds and you can still substantiate) ===\n" <>) previous
     , "\n=== WHAT THE WORKER CLAIMS THIS TURN ===\n"
     , if Text.null claims then "(no transcript claims available)\n" else claims <> "\n"
     , "\n=== CODE CHANGES THIS TURN (may be empty) ===\n"
     , Text.take maxDiffPromptChars diffs
+    ]
+
+-- | The ground-truth anchor: which round this critique is, and the repo's real
+-- commit history. A critic with full tools cross-checks external CI runs; stating
+-- the round stops it renumbering the debate from the worker's prose, and the
+-- commit history (HEAD first, with each commit's timestamp) lets it map a run to
+-- a commit by sha instead of inferring the order from run start times. A missing
+-- history is rendered as an explicit placeholder, never dropped silently.
+critiqueAnchor :: RoundBudget -> Maybe Text -> Text
+critiqueAnchor RoundBudget { thisRound, maxRounds } history =
+  Text.concat
+    [ "This is critique round ", Text.pack (show thisRound), " of at most "
+    , Text.pack (show maxRounds), " this turn. The worker's prose this turn may recount"
+    , " earlier rounds; judge the CURRENT state and keep this round numbering, do not"
+    , " renumber the debate.\n"
+    , "Repo commit history, newest first, one commit per line as"
+    , " \"<full-sha> <committer-ISO-8601-date> <subject>\"; the FIRST line is HEAD."
+    , " Map any CI run to a commit by its sha (a run can start on an older HEAD and"
+    , " finish after a newer commit exists, so run start time is not commit order):\n"
+    , fromMaybe "(git commit history unavailable)" history
+    , "\n"
     ]
 
 critiqueHeader :: Text
@@ -197,8 +249,8 @@ critiqueHeader =
   \\n\
   \Separate blocks with a blank line."
 
-critiqueBlockReason :: Text -> Int -> Int -> Text -> Text
-critiqueBlockReason model thisRound maxRounds output =
+critiqueBlockReason :: Text -> RoundBudget -> Text -> Text
+critiqueBlockReason model RoundBudget { thisRound, maxRounds } output =
   Text.concat
     [ "A fresh adversarial ", model, " critic tried to prove your work wrong this turn, "
     , "using tests and sources, and produced the counter-evidence below (round "

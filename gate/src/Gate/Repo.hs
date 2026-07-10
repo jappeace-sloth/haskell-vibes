@@ -8,9 +8,13 @@ module Gate.Repo
   ( gitRoot
   , repoForFiles
   , repoForFilesOrCwd
+  , commitHistory
   ) where
 
 import Data.ByteString.Lazy.Char8 qualified as LazyChar8
+import Data.Text (Text)
+import Data.Text qualified as Text
+import Data.Text.Encoding (decodeUtf8Lenient)
 import System.Directory (findExecutable)
 import System.Exit (ExitCode (ExitFailure, ExitSuccess))
 import System.FilePath (takeDirectory)
@@ -55,6 +59,40 @@ isSuccess :: ExitCode -> Bool
 isSuccess = \case
   ExitSuccess -> True
   ExitFailure _ -> False
+
+-- | The repo's recent commit history, newest first, one commit per line as
+-- @\<full-sha\> \<committer-ISO-8601-date\> \<subject\>@. The first line is HEAD.
+-- The critic runs with full tools and cross-checks external CI runs; handed the
+-- real commit order and each commit's timestamp it can pin a run to a commit by
+-- its sha instead of reconstructing the order from run start times (which are not
+-- commit order: a run can start on an older HEAD and finish after a newer commit
+-- exists) and pinning runs to the wrong commits. 'Nothing' when the directory is
+-- not a work tree, or when @git@ is not on @PATH@ (same guard as 'gitRoot').
+commitHistory :: FilePath -> IO (Maybe Text)
+commitHistory dir = do
+  gitOnPath <- findExecutable "git"
+  case gitOnPath of
+    Nothing -> pure Nothing
+    -- The resolved path is unused; we invoke @git@ through PATH, the presence
+    -- check is all we need from findExecutable.
+    Just _gitExecutable -> do
+      -- 15 commits: enough to cover a turn's worth of recent work (so the critic
+      -- can place the runs it checks) without bloating the prompt with ancient
+      -- history the critique will never reference.
+      (exitCode, out, _err) <-
+        annotateSpawn ("git -C " <> dir <> " log -n 15 --format=%H %cI %s") $
+          readProcess (proc "git" ["-C", dir, "log", "-n", "15", "--format=%H %cI %s"])
+      pure (parseHistory exitCode out)
+
+-- | The git log output as trimmed 'Text' on success with non-empty output; a
+-- failing exit (not a repository, an empty repo with no commits) is 'Nothing' so
+-- the caller renders an explicit placeholder rather than a blank anchor.
+parseHistory :: ExitCode -> LazyChar8.ByteString -> Maybe Text
+parseHistory exitCode out =
+  let decoded = Text.stripEnd (decodeUtf8Lenient (LazyChar8.toStrict out))
+  in if isSuccess exitCode && not (Text.null decoded)
+       then Just decoded
+       else Nothing
 
 -- | The repo root of the first edited file, or Nothing when there are no files.
 repoForFiles :: [FilePath] -> IO (Maybe FilePath)
