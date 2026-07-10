@@ -29,6 +29,7 @@ module Gate.Critique
   , retryWhileEmpty
   , classifyDossier
   , CritiqueDossier(..)
+  , EditPresence(..)
   , RoundBudget(..)
   ) where
 
@@ -90,28 +91,41 @@ data RoundBudget = RoundBudget
   , maxRounds :: Int
   }
 
+-- | Whether this turn recorded file edits onto the review stack. The fact
+-- travels through the whole phase (mark computation, dossier classification,
+-- diff rendering), so it gets named constructors rather than a bare Bool.
+data EditPresence = EditsRecorded | NoEditsRecorded
+  deriving stock (Eq, Show)
+
+editPresence :: TurnPaths -> IO EditPresence
+editPresence paths = do
+  stackNonEmpty <- fileNonEmpty (reviewStack paths)
+  pure (if stackNonEmpty then EditsRecorded else NoEditsRecorded)
+
 runCritique :: Text -> Maybe FilePath -> TurnPaths -> IO ()
 runCritique session transcript paths = do
   disabled <- phaseDisabled "CLAUDE_SKIP_CRITIQUE"
   done <- flagExists (critiqueDone paths)
   claudeAvailable <- isJust <$> findExecutable "claude"
   when (not disabled && not done && claudeAvailable) $ do
-    hasEdits <- fileNonEmpty (reviewStack paths)
-    currentMark <- if hasEdits then stackLineCount (reviewStack paths) else pure 0
+    edits <- editPresence paths
+    currentMark <- case edits of
+      EditsRecorded -> stackLineCount (reviewStack paths)
+      NoEditsRecorded -> pure 0
     previousMark <- readMark (critiqueEditmark paths)
     if previousMark == Just currentMark
       then
         -- The critic already challenged this turn and the worker made no new
         -- edits since: it stood by its work. A shrug ends the debate.
         writeFlag (critiqueDone paths)
-      else runCritiqueRound session transcript paths hasEdits currentMark
+      else runCritiqueRound session transcript paths edits currentMark
 
-runCritiqueRound :: Text -> Maybe FilePath -> TurnPaths -> Bool -> Int -> IO ()
-runCritiqueRound session transcript paths hasEdits currentMark = do
+runCritiqueRound :: Text -> Maybe FilePath -> TurnPaths -> EditPresence -> Int -> IO ()
+runCritiqueRound session transcript paths edits currentMark = do
   claims <- recentClaims maxCritiqueClaimChars <$> readTurnClaims transcript
-  case classifyDossier claims hasEdits of
+  case classifyDossier claims edits of
     EmptyDossier -> surfaceEmptyDossier session transcript paths
-    DossierReady -> runCriticOnDossier session paths hasEdits currentMark claims
+    DossierReady -> runCriticOnDossier session paths edits currentMark claims
 
 -- Decision: poll the transcript for the turn's claims instead of reading it
 -- once. Claude Code fires the Stop hook before it has flushed the turn's final
@@ -154,11 +168,13 @@ retryWhileEmpty attempts delayMicroseconds readAction = do
 data CritiqueDossier = EmptyDossier | DossierReady
   deriving stock (Eq, Show)
 
-classifyDossier :: Text -> Bool -> CritiqueDossier
-classifyDossier claims hasEdits =
-  if Text.null (Text.strip claims) && not hasEdits
-    then EmptyDossier
-    else DossierReady
+classifyDossier :: Text -> EditPresence -> CritiqueDossier
+classifyDossier claims edits = case edits of
+  EditsRecorded -> DossierReady
+  NoEditsRecorded ->
+    if Text.null (Text.strip claims)
+      then EmptyDossier
+      else DossierReady
 
 -- | Fail loudly on an empty dossier, mirroring 'surfaceNestedFailure': log it
 -- durably and block the Stop once per turn with a user-visible notice. On a
@@ -197,10 +213,10 @@ emptyDossierNotice =
   \gate failure log ($CLAUDE_GATE_FAILURE_LOG, default ~/.claude/gate-failures.log)."
 
 -- | Spawn the nested critic on a non-empty dossier and act on its verdict.
-runCriticOnDossier :: Text -> TurnPaths -> Bool -> Int -> Text -> IO ()
-runCriticOnDossier session paths hasEdits currentMark claims = do
+runCriticOnDossier :: Text -> TurnPaths -> EditPresence -> Int -> Text -> IO ()
+runCriticOnDossier session paths edits currentMark claims = do
   files <- stackFilePaths (reviewStack paths)
-  diffs <- critiqueDiffBlock hasEdits (reviewStack paths)
+  diffs <- critiqueDiffBlock edits (reviewStack paths)
   repo <- repoForFilesOrCwd files
   history <- maybe (pure Nothing) commitHistory repo
   previous <- readPreviousChallenges (critiquePrev paths)
@@ -247,11 +263,10 @@ handleChallenge paths model output currentMark budget = do
 -- stack would crash this phase before the critic runs (the critic is meant to
 -- run on every turn, edits or not). So read the stack only when there are edits,
 -- and otherwise hand the critic the explicit no-edits placeholder.
-critiqueDiffBlock :: Bool -> FilePath -> IO Text
-critiqueDiffBlock hasEdits stackPath =
-  if hasEdits
-    then renderDiffs <$> readEdits stackPath
-    else pure "(no file edits this turn)"
+critiqueDiffBlock :: EditPresence -> FilePath -> IO Text
+critiqueDiffBlock edits stackPath = case edits of
+  EditsRecorded -> renderDiffs <$> readEdits stackPath
+  NoEditsRecorded -> pure "(no file edits this turn)"
 
 readPreviousChallenges :: FilePath -> IO (Maybe Text)
 readPreviousChallenges path = do

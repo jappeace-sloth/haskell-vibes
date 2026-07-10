@@ -11,6 +11,7 @@ import Gate.Corpus (selectSkills)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Gate.Critique
   ( CritiqueDossier (DossierReady, EmptyDossier)
+  , EditPresence (EditsRecorded, NoEditsRecorded)
   , RoundBudget (RoundBudget)
   , classifyDossier
   , critiqueAnchor
@@ -149,13 +150,13 @@ dossierTests =
   testGroup
     "classifyDossier"
     [ testCase "no claims and no edits is an empty dossier" $
-        classifyDossier "" False @?= EmptyDossier
+        classifyDossier "" NoEditsRecorded @?= EmptyDossier
     , testCase "whitespace-only claims count as no claims" $
-        classifyDossier "  \n \t " False @?= EmptyDossier
+        classifyDossier "  \n \t " NoEditsRecorded @?= EmptyDossier
     , testCase "claims alone are enough to critique" $
-        classifyDossier "I fixed the bug" False @?= DossierReady
+        classifyDossier "I fixed the bug" NoEditsRecorded @?= DossierReady
     , testCase "edits alone are enough to critique" $
-        classifyDossier "" True @?= DossierReady
+        classifyDossier "" EditsRecorded @?= DossierReady
     ]
 
 -- A spawn that fails (a missing binary, or a /bin symlink left dangling by a
@@ -320,12 +321,12 @@ critiqueDiffTests =
   testGroup
     "critiqueDiffBlock"
     [ testCase "a no-edit turn yields the placeholder without touching the stack" $ do
-        block <- critiqueDiffBlock False "/no/such/edits.jsonl"
+        block <- critiqueDiffBlock NoEditsRecorded "/no/such/edits.jsonl"
         block @?= "(no file edits this turn)"
     , testCase "an edited turn renders the recorded diff" $ do
         edit <- parsedEdit "Edit" "{\"file_path\":\"src/Foo.hs\",\"old_string\":\"old line\",\"new_string\":\"new line\"}"
         stackPath <- writeStack "critique-edits" [edit]
-        block <- critiqueDiffBlock True stackPath
+        block <- critiqueDiffBlock EditsRecorded stackPath
         assertBool "new text appears in the diff block" (Text.isInfixOf "new line" block)
     ]
 
