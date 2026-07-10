@@ -74,6 +74,9 @@ commitHistory dir = do
   case gitOnPath of
     Nothing -> pure Nothing
     Just _ -> do
+      -- 15 commits: enough to cover a turn's worth of recent work (so the critic
+      -- can place the runs it checks) without bloating the prompt with ancient
+      -- history the critique will never reference.
       (exitCode, out, _err) <-
         annotateSpawn ("git -C " <> dir <> " log -n 15 --format=%H %cI %s") $
           readProcess (proc "git" ["-C", dir, "log", "-n", "15", "--format=%H %cI %s"])
