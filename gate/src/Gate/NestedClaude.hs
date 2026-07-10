@@ -11,8 +11,10 @@
 module Gate.NestedClaude
   ( Reviewer(..)
   , NestedResult(..)
+  , GateFailure(..)
   , runNested
   , surfaceNestedFailure
+  , surfaceGateFailure
   ) where
 
 import Control.Exception.Safe (displayException, tryAny)
@@ -112,21 +114,55 @@ upsert key value environment = (key, value) : filter ((/= key) . fst) environmen
 decodeLazy :: LazyByteString.ByteString -> Text
 decodeLazy = decodeUtf8Lenient . LazyByteString.toStrict
 
+-- | One gate failure described for its three audiences: the durable log, the
+-- main-loop model, and the human watching. A record rather than positional
+-- Text arguments so the reason and the notice cannot be swapped at a call site.
+data GateFailure = GateFailure
+  { failureHeadline :: Text
+    -- ^ One line naming the failure in the durable log header.
+  , failureLogBody :: Text
+    -- ^ Detail recorded under the headline (stderr tail, paths).
+  , failureBlockReason :: Text
+    -- ^ Model-facing reason fed back when the Stop is blocked.
+  , failureUserNotice :: Text
+    -- ^ User-visible systemMessage shown alongside the block.
+  }
+
+-- | The shared fail-loud path: append the failure to the durable log and, on
+-- its first occurrence this turn (tracked via the warn flag), block the Stop
+-- with a reason for the model AND a user-visible notice (then exit). Later
+-- occurrences only log and return, so a persistent failure surfaces once but
+-- does not wedge the turn. Used for broken nested calls and for the critique's
+-- empty dossier; anything the gate must never silently wave through.
+surfaceGateFailure :: Text -> GateFailure -> FilePath -> IO ()
+surfaceGateFailure session failure warnFlag = do
+  appendFailureLog session (failureHeadline failure) (failureLogBody failure)
+  alreadyWarned <- flagExists warnFlag
+  unless alreadyWarned $ do
+    writeFlag warnFlag
+    blockAndExitWithNotice
+      (BlockReason (failureBlockReason failure))
+      (failureUserNotice failure)
+
 -- | Log a broken nested call, and on its first occurrence this turn block the
 -- Stop with a loud reason for the model and a user-visible notice (then exit).
 -- On later occurrences it only logs and returns, so a permanently broken CLI
 -- surfaces once but does not wedge the turn.
 surfaceNestedFailure :: Text -> Text -> Text -> Int -> Bool -> Text -> FilePath -> IO ()
-surfaceNestedFailure session phase model exitCode emptyOut stderrText warnFlag = do
-  appendFailureLog session phase model detail stderrText
-  alreadyWarned <- flagExists warnFlag
-  unless alreadyWarned $ do
-    writeFlag warnFlag
-    blockAndExitWithNotice
-      (BlockReason (failureReason phase model detail stderrText))
-      (failureNotice phase model detail)
+surfaceNestedFailure session phase model exitCode emptyOut stderrText =
+  surfaceGateFailure session (nestedCallFailure phase model detail stderrText)
   where
     detail = failureDetail exitCode emptyOut
+
+-- | Describe a broken nested call for 'surfaceGateFailure'.
+nestedCallFailure :: Text -> Text -> Text -> Text -> GateFailure
+nestedCallFailure phase model detail stderrText =
+  GateFailure
+    { failureHeadline = Text.concat ["nested call broke: phase=", phase, " model=", model, " ", detail]
+    , failureLogBody = "--- stderr (last 20 lines) ---\n" <> stderrTail stderrText
+    , failureBlockReason = failureReason phase model detail stderrText
+    , failureUserNotice = failureNotice phase model detail
+    }
 
 -- | The short, user-visible companion to 'failureReason'. It names the phase,
 -- the model, and the weird exit status so a watching human sees at once that a
@@ -165,17 +201,16 @@ lastN n xs = drop (length xs - n) xs
 
 -- | Append a failure record to the durable log outside the per-turn state dir
 -- (so it survives the per-prompt reset), overridable via CLAUDE_GATE_FAILURE_LOG.
-appendFailureLog :: Text -> Text -> Text -> Text -> Text -> IO ()
-appendFailureLog session phase model detail stderrText = do
+appendFailureLog :: Text -> Text -> Text -> IO ()
+appendFailureLog session headline body = do
   path <- failureLogPath
   createDirectoryIfMissing True (takeDirectory path)
   appendFile path $
     Text.unpack $
       Text.concat
-        [ "=== gate nested-call failure: phase=", phase, " model=", model, " ", detail, " ===\n"
+        [ "=== gate failure: ", headline, " ===\n"
         , "session=", session, "\n"
-        , "--- stderr (last 20 lines) ---\n"
-        , stderrTail stderrText
+        , body
         , "\n"
         ]
 

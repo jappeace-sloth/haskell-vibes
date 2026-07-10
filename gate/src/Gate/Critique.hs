@@ -13,14 +13,27 @@
 -- with no new edits (the worker stood by its work) is a shrug that ends the
 -- debate. Runs after dumbify (so it verifies the canary's refactor too) and
 -- before rule review (so its fixes land on the stack and get rule-checked).
+--
+-- The claims are read from the transcript by POLLING ('readTurnClaims'):
+-- Claude Code can fire the Stop hook before the turn's final assistant message
+-- is flushed to the transcript file, and a single immediate read loses that
+-- race. A turn that still offers neither claims nor edits after polling is an
+-- EMPTY DOSSIER and fails loudly ('classifyDossier'): a critic spawned with
+-- nothing to refute can only answer OK, and recording that OK as approval
+-- would be a false green stamp.
 module Gate.Critique
   ( runCritique
   , critiqueDiffBlock
   , recentClaims
   , critiqueAnchor
+  , retryWhileEmpty
+  , classifyDossier
+  , CritiqueDossier(..)
+  , EditPresence(..)
   , RoundBudget(..)
   ) where
 
+import Control.Concurrent (threadDelay)
 import Control.Monad (when)
 import Data.Maybe (fromMaybe, isJust)
 import Data.Text (Text)
@@ -30,7 +43,14 @@ import Gate.DiffRender (renderDiffs)
 import Gate.EditStack (readEdits, stackFilePaths)
 import Gate.GateConfig (envInt, envStr, phaseDisabled)
 import Gate.HookProtocol (BlockReason (BlockReason), blockAndExit)
-import Gate.NestedClaude (NestedResult (NestedBroken, NestedOutput), Reviewer (Reviewer), runNested, surfaceNestedFailure)
+import Gate.NestedClaude
+  ( GateFailure (GateFailure, failureBlockReason, failureHeadline, failureLogBody, failureUserNotice)
+  , NestedResult (NestedBroken, NestedOutput)
+  , Reviewer (Reviewer)
+  , runNested
+  , surfaceGateFailure
+  , surfaceNestedFailure
+  )
 import Gate.Repo (commitHistory, repoForFilesOrCwd)
 import Gate.ReviewPrompt (maxDiffPromptChars)
 import Gate.Transcript (turnAssistantText)
@@ -71,27 +91,132 @@ data RoundBudget = RoundBudget
   , maxRounds :: Int
   }
 
+-- | Whether this turn recorded file edits onto the review stack. The fact
+-- travels through the whole phase (mark computation, dossier classification,
+-- diff rendering), so it gets named constructors rather than a bare Bool.
+data EditPresence = EditsRecorded | NoEditsRecorded
+  deriving stock (Eq, Show)
+
+editPresence :: TurnPaths -> IO EditPresence
+editPresence paths = do
+  stackNonEmpty <- fileNonEmpty (reviewStack paths)
+  pure (if stackNonEmpty then EditsRecorded else NoEditsRecorded)
+
 runCritique :: Text -> Maybe FilePath -> TurnPaths -> IO ()
 runCritique session transcript paths = do
   disabled <- phaseDisabled "CLAUDE_SKIP_CRITIQUE"
   done <- flagExists (critiqueDone paths)
   claudeAvailable <- isJust <$> findExecutable "claude"
   when (not disabled && not done && claudeAvailable) $ do
-    hasEdits <- fileNonEmpty (reviewStack paths)
-    currentMark <- if hasEdits then stackLineCount (reviewStack paths) else pure 0
+    edits <- editPresence paths
+    currentMark <- case edits of
+      EditsRecorded -> stackLineCount (reviewStack paths)
+      NoEditsRecorded -> pure 0
     previousMark <- readMark (critiqueEditmark paths)
     if previousMark == Just currentMark
       then
         -- The critic already challenged this turn and the worker made no new
         -- edits since: it stood by its work. A shrug ends the debate.
         writeFlag (critiqueDone paths)
-      else runCritiqueRound session transcript paths hasEdits currentMark
+      else runCritiqueRound session transcript paths edits currentMark
 
-runCritiqueRound :: Text -> Maybe FilePath -> TurnPaths -> Bool -> Int -> IO ()
-runCritiqueRound session transcript paths hasEdits currentMark = do
-  claims <- maybe (pure "") (fmap (recentClaims maxCritiqueClaimChars) . turnAssistantText) transcript
+runCritiqueRound :: Text -> Maybe FilePath -> TurnPaths -> EditPresence -> Int -> IO ()
+runCritiqueRound session transcript paths edits currentMark = do
+  claims <- recentClaims maxCritiqueClaimChars <$> readTurnClaims transcript
+  case classifyDossier claims edits of
+    EmptyDossier -> surfaceEmptyDossier session transcript paths
+    DossierReady -> runCriticOnDossier session paths edits currentMark claims
+
+-- Decision: poll the transcript for the turn's claims instead of reading it
+-- once. Claude Code fires the Stop hook before it has flushed the turn's final
+-- assistant message to the transcript file (observed lag ~0.7s), so a single
+-- immediate read handed the critic an empty dossier it could only wave OK at.
+-- Alternatives considered: one fixed sleep before reading (pays the full delay
+-- on every turn, even when the flush already happened) and filesystem watching
+-- (a new dependency for a bounded, sub-second race). Polling costs nothing on
+-- the common path because the first non-blank read returns immediately.
+claimsFlushAttempts :: Int
+claimsFlushAttempts = 5
+
+-- | The pause between transcript polls. The observed flush lag is well under a
+-- second, so the second attempt normally wins the race.
+claimsFlushDelayMicroseconds :: Int
+claimsFlushDelayMicroseconds = 1_000_000
+
+-- | The worker's prose for this turn, polled per the Decision above. A Stop
+-- event without a transcript path yields empty claims immediately; whether an
+-- empty result is fatal is decided by 'classifyDossier', not here.
+readTurnClaims :: Maybe FilePath -> IO Text
+readTurnClaims Nothing = pure ""
+readTurnClaims (Just path) =
+  retryWhileEmpty claimsFlushAttempts claimsFlushDelayMicroseconds (turnAssistantText path)
+
+-- | Run the read until it yields non-blank text, up to the attempt budget,
+-- sleeping the given microseconds between attempts. The final attempt's result
+-- is returned as-is (possibly still blank); the caller decides what that means.
+retryWhileEmpty :: Int -> Int -> IO Text -> IO Text
+retryWhileEmpty attempts delayMicroseconds readAction = do
+  result <- readAction
+  if not (Text.null (Text.strip result)) || attempts <= 1
+    then pure result
+    else do
+      threadDelay delayMicroseconds
+      retryWhileEmpty (attempts - 1) delayMicroseconds readAction
+
+-- | Whether the turn gives the critic anything to refute. Claims that are all
+-- whitespace count as absent, exactly like a missing transcript.
+data CritiqueDossier = EmptyDossier | DossierReady
+  deriving stock (Eq, Show)
+
+classifyDossier :: Text -> EditPresence -> CritiqueDossier
+classifyDossier claims edits = case edits of
+  EditsRecorded -> DossierReady
+  NoEditsRecorded ->
+    if Text.null (Text.strip claims)
+      then EmptyDossier
+      else DossierReady
+
+-- | Fail loudly on an empty dossier, mirroring 'surfaceNestedFailure': log it
+-- durably and block the Stop once per turn with a user-visible notice. On a
+-- repeat occurrence within the turn the phase gives up WITHOUT writing the
+-- approved flag, so the missing critique is never recorded as a clean pass.
+surfaceEmptyDossier :: Text -> Maybe FilePath -> TurnPaths -> IO ()
+surfaceEmptyDossier session transcript paths = do
+  surfaceGateFailure session (emptyDossierFailure transcript) (critiqueBroke paths)
+  writeFlag (critiqueDone paths)
+
+-- | The empty dossier described for 'surfaceGateFailure'. The log records the
+-- transcript path the hook event carried (or its absence), which is the first
+-- thing to check when debugging why the claims came up empty.
+emptyDossierFailure :: Maybe FilePath -> GateFailure
+emptyDossierFailure transcript =
+  GateFailure
+    { failureHeadline = "critique got an empty dossier (no claims, no edits)"
+    , failureLogBody = "transcript_path=" <> maybe "(absent from Stop event)" Text.pack transcript
+    , failureBlockReason = emptyDossierReason
+    , failureUserNotice = emptyDossierNotice
+    }
+
+emptyDossierReason :: Text
+emptyDossierReason =
+  "GATE INPUT FAILURE in the critique phase: even after polling the transcript, \
+  \this turn shows no assistant text and has no recorded edits, so there was \
+  \nothing to hand the critic and this turn was NOT critiqued. An empty dossier \
+  \is never a clean pass. Likely causes: the Stop event carried no \
+  \transcript_path, or the transcript flush lagged past the polling window. \
+  \This warning fires once per turn; you may continue after acknowledging it."
+
+emptyDossierNotice :: Text
+emptyDossierNotice =
+  "vibes-gate: the critique phase found no claims in the transcript and no \
+  \edits even after polling, so this turn was NOT critiqued. Details in the \
+  \gate failure log ($CLAUDE_GATE_FAILURE_LOG, default ~/.claude/gate-failures.log)."
+
+-- | Spawn the nested critic on a non-empty dossier and act on its verdict.
+runCriticOnDossier :: Text -> TurnPaths -> EditPresence -> Int -> Text -> IO ()
+runCriticOnDossier session paths edits currentMark claims = do
   files <- stackFilePaths (reviewStack paths)
-  diffs <- critiqueDiffBlock hasEdits (reviewStack paths)
+  diffs <- critiqueDiffBlock edits (reviewStack paths)
   repo <- repoForFilesOrCwd files
   history <- maybe (pure Nothing) commitHistory repo
   previous <- readPreviousChallenges (critiquePrev paths)
@@ -138,11 +263,10 @@ handleChallenge paths model output currentMark budget = do
 -- stack would crash this phase before the critic runs (the critic is meant to
 -- run on every turn, edits or not). So read the stack only when there are edits,
 -- and otherwise hand the critic the explicit no-edits placeholder.
-critiqueDiffBlock :: Bool -> FilePath -> IO Text
-critiqueDiffBlock hasEdits stackPath =
-  if hasEdits
-    then renderDiffs <$> readEdits stackPath
-    else pure "(no file edits this turn)"
+critiqueDiffBlock :: EditPresence -> FilePath -> IO Text
+critiqueDiffBlock edits stackPath = case edits of
+  EditsRecorded -> renderDiffs <$> readEdits stackPath
+  NoEditsRecorded -> pure "(no file edits this turn)"
 
 readPreviousChallenges :: FilePath -> IO (Maybe Text)
 readPreviousChallenges path = do

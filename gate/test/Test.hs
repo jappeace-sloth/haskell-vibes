@@ -8,7 +8,17 @@ import Data.List (isInfixOf)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Gate.Corpus (selectSkills)
-import Gate.Critique (RoundBudget (RoundBudget), critiqueAnchor, critiqueDiffBlock, recentClaims)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Gate.Critique
+  ( CritiqueDossier (DossierReady, EmptyDossier)
+  , EditPresence (EditsRecorded, NoEditsRecorded)
+  , RoundBudget (RoundBudget)
+  , classifyDossier
+  , critiqueAnchor
+  , critiqueDiffBlock
+  , recentClaims
+  , retryWhileEmpty
+  )
 import Gate.DiffRender (renderDiffs)
 import Gate.Edit (Edit (..), Replacement (..), editFilePath, parseEditFromTool)
 import Gate.RecordEdit (SkipReason (..), pathSkipReason)
@@ -41,6 +51,8 @@ tests =
     , critiqueDiffTests
     , recentClaimsTests
     , critiqueAnchorTests
+    , claimsRetryTests
+    , dossierTests
     , counterTests
     , spawnAnnotationTests
     ]
@@ -83,6 +95,68 @@ critiqueAnchorTests =
         assertBool
           "the placeholder names the missing history"
           (Text.isInfixOf "unavailable" (critiqueAnchor (RoundBudget 1 2) Nothing))
+    ]
+
+-- The transcript can lag the Stop hook (the final assistant message flushes
+-- after the hook fires), so the claims read polls via 'retryWhileEmpty'. These
+-- drive the real retry loop with a scripted sequence of reads: it must return
+-- at the first non-blank read, keep polling past blank ones, and hand back the
+-- final blank result when the budget runs out so the caller can fail loud.
+
+claimsRetryTests :: TestTree
+claimsRetryTests =
+  testGroup
+    "retryWhileEmpty"
+    [ testCase "returns at the first non-blank read without extra attempts" $ do
+        (result, reads') <- scriptedRetry 5 ["claims right away"]
+        result @?= "claims right away"
+        reads' @?= 1
+    , testCase "polls past blank reads until text appears" $ do
+        (result, reads') <- scriptedRetry 5 ["", "  \n  ", "late claims"]
+        result @?= "late claims"
+        reads' @?= 3
+    , testCase "gives up blank after the attempt budget so the caller can fail loud" $ do
+        (result, reads') <- scriptedRetry 3 ["", "", "", "", ""]
+        result @?= ""
+        reads' @?= 3
+    ]
+
+-- | Drive 'retryWhileEmpty' (with no pause between attempts) through a
+-- scripted sequence of reads, returning the final result and the number of
+-- reads it consumed.
+scriptedRetry :: Int -> [Text] -> IO (Text, Int)
+scriptedRetry attempts script = do
+  counter <- newIORef (0 :: Int)
+  result <- retryWhileEmpty attempts 0 (nextScriptedRead counter script)
+  reads' <- readIORef counter
+  pure (result, reads')
+
+nextScriptedRead :: IORef Int -> [Text] -> IO Text
+nextScriptedRead counter script = do
+  index <- readIORef counter
+  writeIORef counter (index + 1)
+  case drop index script of
+    [] -> throwIO (ErrorCall "scripted retry consumed more reads than the test provided")
+    next : _ -> pure next
+
+-- The empty-dossier rule: a critic spawned with neither claims nor edits can
+-- only answer OK, and that OK must never be recorded as approval. The
+-- classification decides between failing loud and spawning the critic, so a
+-- wrong verdict here either wedges healthy turns or silently green-stamps
+-- unchecked ones.
+
+dossierTests :: TestTree
+dossierTests =
+  testGroup
+    "classifyDossier"
+    [ testCase "no claims and no edits is an empty dossier" $
+        classifyDossier "" NoEditsRecorded @?= EmptyDossier
+    , testCase "whitespace-only claims count as no claims" $
+        classifyDossier "  \n \t " NoEditsRecorded @?= EmptyDossier
+    , testCase "claims alone are enough to critique" $
+        classifyDossier "I fixed the bug" NoEditsRecorded @?= DossierReady
+    , testCase "edits alone are enough to critique" $
+        classifyDossier "" EditsRecorded @?= DossierReady
     ]
 
 -- A spawn that fails (a missing binary, or a /bin symlink left dangling by a
@@ -247,12 +321,12 @@ critiqueDiffTests =
   testGroup
     "critiqueDiffBlock"
     [ testCase "a no-edit turn yields the placeholder without touching the stack" $ do
-        block <- critiqueDiffBlock False "/no/such/edits.jsonl"
+        block <- critiqueDiffBlock NoEditsRecorded "/no/such/edits.jsonl"
         block @?= "(no file edits this turn)"
     , testCase "an edited turn renders the recorded diff" $ do
         edit <- parsedEdit "Edit" "{\"file_path\":\"src/Foo.hs\",\"old_string\":\"old line\",\"new_string\":\"new line\"}"
         stackPath <- writeStack "critique-edits" [edit]
-        block <- critiqueDiffBlock True stackPath
+        block <- critiqueDiffBlock EditsRecorded stackPath
         assertBool "new text appears in the diff block" (Text.isInfixOf "new line" block)
     ]
 
