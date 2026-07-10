@@ -18,6 +18,7 @@ module Gate.Critique
   , critiqueDiffBlock
   , recentClaims
   , critiqueAnchor
+  , RoundBudget(..)
   ) where
 
 import Control.Monad (when)
@@ -60,6 +61,16 @@ maxCritiqueClaimChars = 16_000
 recentClaims :: Int -> Text -> Text
 recentClaims = Text.takeEnd
 
+-- | Which critique round this is, and the cap it counts against. The two travel
+-- together through the anchor, the block reason, and 'handleChallenge'; bundling
+-- them keeps the round and its cap from being swapped at a call site (both are
+-- 'Int'), and threading one value keeps the number the critic is told identical
+-- to the number the worker is told.
+data RoundBudget = RoundBudget
+  { thisRound :: Int
+  , maxRounds :: Int
+  }
+
 runCritique :: Text -> Maybe FilePath -> TurnPaths -> IO ()
 runCritique session transcript paths = do
   disabled <- phaseDisabled "CLAUDE_SKIP_CRITIQUE"
@@ -85,15 +96,15 @@ runCritiqueRound session transcript paths hasEdits currentMark = do
   history <- maybe (pure Nothing) commitHistory repo
   previous <- readPreviousChallenges (critiquePrev paths)
   previousRound <- readCounter (critiqueRound paths)
-  maxRounds <- envInt "CLAUDE_CRITIQUE_MAX_ROUNDS" 2
+  roundCap <- envInt "CLAUDE_CRITIQUE_MAX_ROUNDS" 2
   timeoutSecs <- envInt "CLAUDE_CRITIQUE_TIMEOUT" 1200
   model <- envStr "CLAUDE_CRITIQUE_MODEL" "claude-opus-4-8"
   -- The round is computed once and threaded to both the prompt and the block, so
   -- the critic is told the same round the worker is (the nested critic runs with
   -- the critique phase disabled, so it never bumps this counter mid-round).
-  let thisRound = previousRound + 1
+  let budget = RoundBudget { thisRound = previousRound + 1, maxRounds = roundCap }
       reviewer = Reviewer model False timeoutSecs repo
-      prompt = critiquePrompt (critiqueAnchor thisRound maxRounds history) previous claims diffs
+      prompt = critiquePrompt (critiqueAnchor budget history) previous claims diffs
   result <- runNested reviewer prompt
   case result of
     NestedBroken exitCode emptyOut stderrText -> do
@@ -101,22 +112,22 @@ runCritiqueRound session transcript paths hasEdits currentMark = do
       writeFlag (critiqueDone paths)
     NestedOutput output ->
       if hasChallenge output
-        then handleChallenge paths model output currentMark thisRound maxRounds
+        then handleChallenge paths model output currentMark budget
         else do
           -- Clean OK: critique is done and this turn cleared.
           writeFlag (critiqueDone paths)
           writeFlag (critiqueApproved paths)
 
-handleChallenge :: TurnPaths -> Text -> Text -> Int -> Int -> Int -> IO ()
-handleChallenge paths model output currentMark thisRound maxRounds = do
-  writeCounter (critiqueRound paths) thisRound
-  if thisRound <= maxRounds
+handleChallenge :: TurnPaths -> Text -> Text -> Int -> RoundBudget -> IO ()
+handleChallenge paths model output currentMark budget = do
+  writeCounter (critiqueRound paths) (thisRound budget)
+  if thisRound budget <= maxRounds budget
     then do
       -- Record this challenge and the stack size it was based on. No new edits
       -- before the next Stop reads as a shrug; new edits earn a fresh critique.
       TextIO.writeFile (critiquePrev paths) output
       writeCounter (critiqueEditmark paths) currentMark
-      blockAndExit (BlockReason (critiqueBlockReason model thisRound maxRounds output))
+      blockAndExit (BlockReason (critiqueBlockReason model budget output))
     else
       -- Round cap reached: stop debating without marking approved (the concern
       -- is unresolved), and let rule review proceed.
@@ -160,8 +171,8 @@ critiquePrompt anchor previous claims diffs =
 -- commit history (HEAD first, with each commit's timestamp) lets it map a run to
 -- a commit by sha instead of inferring the order from run start times. A missing
 -- history is rendered as an explicit placeholder, never dropped silently.
-critiqueAnchor :: Int -> Int -> Maybe Text -> Text
-critiqueAnchor thisRound maxRounds history =
+critiqueAnchor :: RoundBudget -> Maybe Text -> Text
+critiqueAnchor RoundBudget { thisRound, maxRounds } history =
   Text.concat
     [ "This is critique round ", Text.pack (show thisRound), " of at most "
     , Text.pack (show maxRounds), " this turn. The worker's prose this turn may recount"
@@ -238,8 +249,8 @@ critiqueHeader =
   \\n\
   \Separate blocks with a blank line."
 
-critiqueBlockReason :: Text -> Int -> Int -> Text -> Text
-critiqueBlockReason model thisRound maxRounds output =
+critiqueBlockReason :: Text -> RoundBudget -> Text -> Text
+critiqueBlockReason model RoundBudget { thisRound, maxRounds } output =
   Text.concat
     [ "A fresh adversarial ", model, " critic tried to prove your work wrong this turn, "
     , "using tests and sources, and produced the counter-evidence below (round "

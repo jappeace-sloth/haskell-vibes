@@ -8,7 +8,7 @@ import Data.List (isInfixOf)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Gate.Corpus (selectSkills)
-import Gate.Critique (critiqueAnchor, critiqueDiffBlock, recentClaims)
+import Gate.Critique (RoundBudget (RoundBudget), critiqueAnchor, critiqueDiffBlock, recentClaims)
 import Gate.DiffRender (renderDiffs)
 import Gate.Edit (Edit (..), Replacement (..), editFilePath, parseEditFromTool)
 import Gate.RecordEdit (SkipReason (..), pathSkipReason)
@@ -78,11 +78,11 @@ critiqueAnchorTests =
     [ testCase "a present commit history is carried through verbatim" $
         assertBool
           "the supplied history appears in the anchor"
-          (Text.isInfixOf "deadbeef 2026-07-10T12:00:00Z fix the thing" (critiqueAnchor 2 3 (Just "deadbeef 2026-07-10T12:00:00Z fix the thing")))
+          (Text.isInfixOf "deadbeef 2026-07-10T12:00:00Z fix the thing" (critiqueAnchor (RoundBudget 2 3) (Just "deadbeef 2026-07-10T12:00:00Z fix the thing")))
     , testCase "a missing history becomes an explicit placeholder, not a blank" $
         assertBool
           "the placeholder names the missing history"
-          (Text.isInfixOf "unavailable" (critiqueAnchor 1 2 Nothing))
+          (Text.isInfixOf "unavailable" (critiqueAnchor (RoundBudget 1 2) Nothing))
     ]
 
 -- A spawn that fails (a missing binary, or a /bin symlink left dangling by a
