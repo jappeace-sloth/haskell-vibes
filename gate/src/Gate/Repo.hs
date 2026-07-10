@@ -73,7 +73,9 @@ commitHistory dir = do
   gitOnPath <- findExecutable "git"
   case gitOnPath of
     Nothing -> pure Nothing
-    Just _ -> do
+    -- The resolved path is unused; we invoke @git@ through PATH, the presence
+    -- check is all we need from findExecutable.
+    Just _gitExecutable -> do
       -- 15 commits: enough to cover a turn's worth of recent work (so the critic
       -- can place the runs it checks) without bloating the prompt with ancient
       -- history the critique will never reference.
