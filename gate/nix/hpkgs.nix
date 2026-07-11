@@ -13,7 +13,7 @@ let
       ../app
       ../src
       ../test
-      ../vibes-gate.cabal
+      ../claude-gate.cabal
       ../LICENSE
       ../Changelog.md
     ];
@@ -21,6 +21,6 @@ let
 in
 pkgs.haskellPackages.override {
   overrides = hnew: _hold: {
-    vibes-gate = hnew.callCabal2nix "vibes-gate" src { };
+    claude-gate = hnew.callCabal2nix "claude-gate" src { };
   };
 }

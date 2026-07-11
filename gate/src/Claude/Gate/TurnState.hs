@@ -6,7 +6,7 @@
 -- keeps its own done/round/editmark/approved flags here so it converges across
 -- the turn's repeated Stops; reset wipes the whole directory when the next user
 -- prompt arrives. All of it lives under @$TMPDIR/claude-turn-state/<session>@.
-module Gate.TurnState
+module Claude.Gate.TurnState
   ( TurnPaths(..)
   , turnPaths
   , sanitiseSession

@@ -1,6 +1,6 @@
 -- | Environment-tunable gate configuration: the skip flags and the integer
 -- knobs (round caps, timeouts) each phase reads.
-module Gate.GateConfig
+module Claude.Gate.GateConfig
   ( phaseDisabled
   , envInt
   , envStr

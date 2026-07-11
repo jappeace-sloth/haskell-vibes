@@ -5,7 +5,7 @@
 -- constructors are the complete set: there is no "unknown tool" case to fall
 -- back on. Each edit is persisted as one JSON line on the review stack and read
 -- back at Stop time to reconstruct the diff for the reviewer.
-module Gate.Edit
+module Claude.Gate.Edit
   ( Edit(..)
   , Replacement(..)
   , editFilePath

@@ -5,7 +5,7 @@
 -- same file is not a false "I can't see it" confusion, and the reviewer can
 -- judge the ABSENCE of required elements (e.g. a missing type signature) that a
 -- diff fragment alone cannot show. Each file is capped to keep the prompt bounded.
-module Gate.FileContext
+module Claude.Gate.FileContext
   ( renderFullFiles
   , maxFileContextChars
   ) where

@@ -1,1 +1,1 @@
-# vibes-gate changelog
+# claude-gate changelog

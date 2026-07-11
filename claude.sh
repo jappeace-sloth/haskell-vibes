@@ -218,7 +218,7 @@ launch_nspawn() {
     # checkout, another instance): a swapped CLAUDE.md/skills/character changes
     # behaviour underfoot. The snapshot lives outside the rootfs so the agent
     # cannot reach it to edit its own config. The Stop gate itself is no longer
-    # mounted: it is the vibes-gate binary baked into the image (see
+    # mounted: it is the claude-gate binary baked into the image (see
     # default.nix), so it cannot be disabled by a vanished mount. character is
     # mounted even in vanilla mode, so it is always snapshotted.
     CONFIG_SNAPSHOT="/tmp/claude-config.${INSTANCE_NAME}.$$"

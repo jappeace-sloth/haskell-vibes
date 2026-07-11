@@ -5,7 +5,7 @@
 -- the fields the gate reads from the input, and the two output shapes it emits:
 -- a @decision: block@ (with a reason fed back to the main-loop model) and a
 -- @systemMessage@ (shown to the user, not added to model context).
-module Gate.HookProtocol
+module Claude.Gate.HookProtocol
   ( HookEvent(..)
   , BlockReason(..)
   , readHookEvent
@@ -52,7 +52,7 @@ readHookEvent :: IO HookEvent
 readHookEvent = do
   raw <- LazyByteString.getContents
   case Aeson.eitherDecode raw of
-    Left err -> error ("vibes-gate: could not decode hook event from stdin: " <> err)
+    Left err -> error ("claude-gate: could not decode hook event from stdin: " <> err)
     Right event -> pure event
 
 -- | Block the Stop and feed the reason back to the model. Printing this JSON and

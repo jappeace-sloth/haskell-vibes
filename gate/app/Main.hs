@@ -1,4 +1,4 @@
--- | The vibes-gate executable: one binary, four subcommands.
+-- | The claude-gate executable: one binary, four subcommands.
 --
 -- Claude Code wires each hook to a subcommand in settings.json:
 --   record     PostToolUse(Write|Edit|MultiEdit|NotebookEdit)
@@ -13,11 +13,11 @@
 module Main (main) where
 
 import Control.Monad (join)
-import Gate.Critique (runCritique)
-import Gate.HookProtocol (HookEvent (sessionId, transcriptPath), readHookEvent)
-import Gate.RecordEdit (recordEdit)
-import Gate.StopGate (runStopGate)
-import Gate.TurnState (ensureStateDir, resetState, turnPaths)
+import Claude.Gate.Critique (runCritique)
+import Claude.Gate.HookProtocol (HookEvent (sessionId, transcriptPath), readHookEvent)
+import Claude.Gate.RecordEdit (recordEdit)
+import Claude.Gate.StopGate (runStopGate)
+import Claude.Gate.TurnState (ensureStateDir, resetState, turnPaths)
 import Options.Applicative
 
 main :: IO ()

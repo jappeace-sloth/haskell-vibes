@@ -6,7 +6,7 @@
 let
   src = builtins.path {
     path = ../.;
-    name = "vibes-gate-src";
+    name = "claude-gate-src";
     filter = path: _type:
       let base = baseNameOf (toString path);
       in !(builtins.elem base [ "dist-newstyle" "dist" "result" ".git" ]);

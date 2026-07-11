@@ -4,7 +4,7 @@
 -- and (the critic) run tests. The root is taken from the first edited file;
 -- the critic falls back to the gate's own working directory on a turn with no
 -- file edits.
-module Gate.Repo
+module Claude.Gate.Repo
   ( gitRoot
   , repoForFiles
   , repoForFilesOrCwd
@@ -20,7 +20,7 @@ import System.Exit (ExitCode (ExitFailure, ExitSuccess))
 import System.FilePath (takeDirectory)
 import System.Process.Typed (proc, readProcess)
 
-import Gate.SpawnAnnotation (annotateSpawn)
+import Claude.Gate.SpawnAnnotation (annotateSpawn)
 
 -- | The git work-tree root containing a directory. 'Nothing' when the directory
 -- is not in a repository, or when @git@ is not on @PATH@ at all.

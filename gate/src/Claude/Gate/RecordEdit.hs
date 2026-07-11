@@ -1,7 +1,7 @@
 -- | The PostToolUse half of the gate: record an edit onto the per-turn review
 -- stack, near-instantly, so the Stop gate can review the whole turn's diffs in
 -- one pass. This never blocks the agent and never reviews anything itself.
-module Gate.RecordEdit
+module Claude.Gate.RecordEdit
   ( recordEdit
   , editTools
   , pathSkipReason
@@ -15,9 +15,9 @@ import Data.ByteString qualified as ByteString
 import Data.ByteString.Lazy qualified as LazyByteString
 import Data.List (isInfixOf, isSuffixOf)
 import Data.Text (Text)
-import Gate.Edit (Edit, editFilePath, parseEditFromTool)
-import Gate.HookProtocol (HookEvent (sessionId, toolInput, toolName), readHookEvent)
-import Gate.TurnState (TurnPaths (reviewStack), ensureStateDir, turnPaths)
+import Claude.Gate.Edit (Edit, editFilePath, parseEditFromTool)
+import Claude.Gate.HookProtocol (HookEvent (sessionId, toolInput, toolName), readHookEvent)
+import Claude.Gate.TurnState (TurnPaths (reviewStack), ensureStateDir, turnPaths)
 import System.Directory (doesFileExist, getFileSize)
 import System.Environment (lookupEnv)
 
@@ -80,7 +80,7 @@ recordEdit = do
       (Just tool, Just input)
         | tool `elem` editTools ->
             case parseEditFromTool tool input of
-              Left err -> error ("vibes-gate record: malformed " <> show tool <> " input: " <> err)
+              Left err -> error ("claude-gate record: malformed " <> show tool <> " input: " <> err)
               Right edit -> recordIfRelevant (sessionId event) edit
       _notAnEditEvent -> pure ()
 

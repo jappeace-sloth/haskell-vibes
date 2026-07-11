@@ -8,7 +8,7 @@
 -- its first occurrence this turn, blocks the Stop with a descriptive reason for
 -- the model AND a user-visible systemMessage naming the weird exit status, so a
 -- silently broken reviewer is never mistaken for a clean pass by either of them.
-module Gate.NestedClaude
+module Claude.Gate.NestedClaude
   ( Reviewer(..)
   , NestedResult(..)
   , GateFailure(..)
@@ -24,9 +24,9 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding (decodeUtf8Lenient, encodeUtf8)
-import Gate.HookProtocol (BlockReason (BlockReason), blockAndExitWithNotice)
-import Gate.SpawnAnnotation (annotateSpawn)
-import Gate.TurnState (flagExists, writeFlag)
+import Claude.Gate.HookProtocol (BlockReason (BlockReason), blockAndExitWithNotice)
+import Claude.Gate.SpawnAnnotation (annotateSpawn)
+import Claude.Gate.TurnState (flagExists, writeFlag)
 import System.Directory (createDirectoryIfMissing)
 import System.Environment (getEnvironment, lookupEnv)
 import System.Exit (ExitCode (ExitFailure, ExitSuccess))
@@ -171,7 +171,7 @@ nestedCallFailure phase model detail stderrText =
 failureNotice :: Text -> Text -> Text -> Text
 failureNotice phase model detail =
   Text.concat
-    [ "vibes-gate: the ", phase, " reviewer (", model, ") returned a bad exit status ("
+    [ "claude-gate: the ", phase, " reviewer (", model, ") returned a bad exit status ("
     , detail, "), so this turn was NOT checked by it. Details in the gate failure log "
     , "($CLAUDE_GATE_FAILURE_LOG, default ~/.claude/gate-failures.log)."
     ]

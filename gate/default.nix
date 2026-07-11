@@ -1,4 +1,4 @@
 { hpkgs ? import ./nix/hpkgs.nix {}
 ,
 }:
-hpkgs.vibes-gate
+hpkgs.claude-gate

@@ -8,7 +8,7 @@
 -- attaches its command, and (via 'checkpoint'\'s 'HasCallStack') the call site,
 -- to the exception with @annotated-exception@, so an uncaught crash, or a
 -- 'Control.Exception.displayException' of a caught one, names the spawn.
-module Gate.SpawnAnnotation
+module Claude.Gate.SpawnAnnotation
   ( ProcessCallSite(..)
   , annotateSpawn
   ) where
