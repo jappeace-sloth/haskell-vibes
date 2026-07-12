@@ -1,9 +1,9 @@
 -- | The Phase A rule-review prompt and the parsing of the reviewer's reply.
 --
 -- Keeping the prompt text here, separate from the orchestration in
--- "Gate.RuleReview", makes the wording easy to find and edit without wading
+-- "Claude.Gate.RuleReview", makes the wording easy to find and edit without wading
 -- through control flow.
-module Gate.ReviewPrompt
+module Claude.Gate.ReviewPrompt
   ( buildReviewPrompt
   , maxDiffPromptChars
   , hasViolations

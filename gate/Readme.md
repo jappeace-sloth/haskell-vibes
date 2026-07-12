@@ -1,4 +1,4 @@
-# vibes-gate
+# claude-gate
 
 The end-of-turn gate for the vibes Claude Code container, as one Haskell binary.
 
@@ -15,9 +15,9 @@ The binary reads one hook JSON object on stdin and dispatches on its argument.
 
 | Subcommand          | Hook event   | What it does                                                        |
 | ------------------- | ------------ | ------------------------------------------------------------------- |
-| `vibes-gate record` | PostToolUse  | Append the edit to the per-turn review stack (filters binaries etc.) |
-| `vibes-gate reset`  | UserPromptSubmit | Wipe the previous turn's per-turn state                          |
-| `vibes-gate stop-gate` | Stop      | Phase A rule review, then Phase B verification nudge                 |
+| `claude-gate record` | PostToolUse  | Append the edit to the per-turn review stack (filters binaries etc.) |
+| `claude-gate reset`  | UserPromptSubmit | Wipe the previous turn's per-turn state                          |
+| `claude-gate stop-gate` | Stop      | Phase A rule review, then Phase B verification nudge                 |
 
 ## Phases of the Stop gate
 

@@ -21,7 +21,7 @@
 -- EMPTY DOSSIER and fails loudly ('classifyDossier'): a critic spawned with
 -- nothing to refute can only answer OK, and recording that OK as approval
 -- would be a false green stamp.
-module Gate.Critique
+module Claude.Gate.Critique
   ( runCritique
   , critiqueDiffBlock
   , recentClaims
@@ -39,11 +39,11 @@ import Data.Maybe (fromMaybe, isJust)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as TextIO
-import Gate.DiffRender (renderDiffs)
-import Gate.EditStack (readEdits, stackFilePaths)
-import Gate.GateConfig (envInt, envStr, phaseDisabled)
-import Gate.HookProtocol (BlockReason (BlockReason), blockAndExit)
-import Gate.NestedClaude
+import Claude.Gate.DiffRender (renderDiffs)
+import Claude.Gate.EditStack (readEdits, stackFilePaths)
+import Claude.Gate.GateConfig (envInt, envStr, phaseDisabled)
+import Claude.Gate.HookProtocol (BlockReason (BlockReason), blockAndExit)
+import Claude.Gate.NestedClaude
   ( GateFailure (GateFailure, failureBlockReason, failureHeadline, failureLogBody, failureUserNotice)
   , NestedResult (NestedBroken, NestedOutput)
   , Reviewer (Reviewer)
@@ -51,10 +51,10 @@ import Gate.NestedClaude
   , surfaceGateFailure
   , surfaceNestedFailure
   )
-import Gate.Repo (commitHistory, repoForFilesOrCwd)
-import Gate.ReviewPrompt (maxDiffPromptChars)
-import Gate.Transcript (turnAssistantText)
-import Gate.TurnState
+import Claude.Gate.Repo (commitHistory, repoForFilesOrCwd)
+import Claude.Gate.ReviewPrompt (maxDiffPromptChars)
+import Claude.Gate.Transcript (turnAssistantText)
+import Claude.Gate.TurnState
   ( TurnPaths (critiqueApproved, critiqueBroke, critiqueDone, critiqueEditmark, critiquePrev, critiqueRound, reviewStack)
   , fileNonEmpty
   , flagExists
@@ -208,7 +208,7 @@ emptyDossierReason =
 
 emptyDossierNotice :: Text
 emptyDossierNotice =
-  "vibes-gate: the critique phase found no claims in the transcript and no \
+  "claude-gate: the critique phase found no claims in the transcript and no \
   \edits even after polling, so this turn was NOT critiqued. Details in the \
   \gate failure log ($CLAUDE_GATE_FAILURE_LOG, default ~/.claude/gate-failures.log)."
 

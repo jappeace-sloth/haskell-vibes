@@ -6,22 +6,22 @@
 -- the Stop with the findings; the model's fixes are themselves edits, recorded on
 -- a fresh stack and re-reviewed next Stop, so review loops until clean. A reviewer
 -- that fails returns the diffs to the stack and is surfaced loudly.
-module Gate.RuleReview
+module Claude.Gate.RuleReview
   ( runRuleReview
   ) where
 
 import Control.Monad (when)
 import Data.Maybe (isJust)
 import Data.Text (Text)
-import Gate.Corpus (buildCorpus)
-import Gate.DiffRender (renderDiffs)
-import Gate.EditStack (readEdits, returnClaimedToStack, stackFilePaths)
-import Gate.FileContext (renderFullFiles)
-import Gate.GateConfig (envInt, envStr, phaseDisabled)
-import Gate.HookProtocol (BlockReason (BlockReason), blockAndExit)
-import Gate.NestedClaude (NestedResult (NestedBroken, NestedOutput), Reviewer (Reviewer), runNested, surfaceNestedFailure)
-import Gate.ReviewPrompt (buildReviewPrompt, hasViolations, reviewBlockReason)
-import Gate.TurnState
+import Claude.Gate.Corpus (buildCorpus)
+import Claude.Gate.DiffRender (renderDiffs)
+import Claude.Gate.EditStack (readEdits, returnClaimedToStack, stackFilePaths)
+import Claude.Gate.FileContext (renderFullFiles)
+import Claude.Gate.GateConfig (envInt, envStr, phaseDisabled)
+import Claude.Gate.HookProtocol (BlockReason (BlockReason), blockAndExit)
+import Claude.Gate.NestedClaude (NestedResult (NestedBroken, NestedOutput), Reviewer (Reviewer), runNested, surfaceNestedFailure)
+import Claude.Gate.ReviewPrompt (buildReviewPrompt, hasViolations, reviewBlockReason)
+import Claude.Gate.TurnState
   ( TurnPaths (claimedStack, reviewApproved, reviewBroke, reviewStack)
   , claimReviewStack
   , fileNonEmpty

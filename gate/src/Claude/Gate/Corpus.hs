@@ -5,7 +5,7 @@
 -- the file types touched this turn. Attaching every skill was almost all of the
 -- old prompt and pure latency, so only language skills matching the touched
 -- extensions are selected; the two CLAUDE.md files are always included.
-module Gate.Corpus
+module Claude.Gate.Corpus
   ( selectSkills
   , buildCorpus
   ) where
@@ -14,7 +14,7 @@ import Data.List (isSuffixOf, nub, sort)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as TextIO
-import Gate.Repo (gitRoot)
+import Claude.Gate.Repo (gitRoot)
 import System.Directory (doesFileExist, getHomeDirectory)
 import System.FilePath (takeDirectory, (</>))
 

@@ -1,6 +1,6 @@
 cabal-version:      3.0
 
-name:           vibes-gate
+name:           claude-gate
 version:        1.0.0
 homepage:       https://github.com/jappeace/vibes#readme
 bug-reports:    https://github.com/jappeace/vibes/issues
@@ -58,28 +58,28 @@ common common-options
 library
   import: common-options
   exposed-modules:
-      Gate.HookProtocol
-      Gate.Edit
-      Gate.TurnState
-      Gate.RecordEdit
-      Gate.DiffRender
-      Gate.Corpus
-      Gate.FileContext
-      Gate.Repo
-      Gate.SpawnAnnotation
-      Gate.GateConfig
-      Gate.EditStack
-      Gate.NestedClaude
-      Gate.Transcript
-      Gate.ReviewPrompt
-      Gate.Dumbify
-      Gate.Critique
-      Gate.RuleReview
-      Gate.StopGate
+      Claude.Gate.HookProtocol
+      Claude.Gate.Edit
+      Claude.Gate.TurnState
+      Claude.Gate.RecordEdit
+      Claude.Gate.DiffRender
+      Claude.Gate.Corpus
+      Claude.Gate.FileContext
+      Claude.Gate.Repo
+      Claude.Gate.SpawnAnnotation
+      Claude.Gate.GateConfig
+      Claude.Gate.EditStack
+      Claude.Gate.NestedClaude
+      Claude.Gate.Transcript
+      Claude.Gate.ReviewPrompt
+      Claude.Gate.Dumbify
+      Claude.Gate.Critique
+      Claude.Gate.RuleReview
+      Claude.Gate.StopGate
   other-modules:
-      Paths_vibes_gate
+      Paths_claude_gate
   autogen-modules:
-      Paths_vibes_gate
+      Paths_claude_gate
   hs-source-dirs:
       src
   build-depends:
@@ -92,13 +92,13 @@ library
       typed-process,
       safe-exceptions
 
-executable vibes-gate
+executable claude-gate
   import: common-options
   main-is: Main.hs
   hs-source-dirs:
       app
   build-depends:
-      vibes-gate,
+      claude-gate,
       optparse-applicative
   ghc-options: -Wno-unused-packages
 
@@ -114,7 +114,7 @@ test-suite unit
       tasty-hunit,
       tasty-hedgehog,
       hedgehog,
-      vibes-gate,
+      claude-gate,
       aeson,
       bytestring,
       text,

@@ -3,7 +3,7 @@
   pkgs ? import ./nix/pkgs.nix {},
 }:
 hpkgs.shellFor {
-  packages = ps: [ ps."vibes-gate" ];
+  packages = ps: [ ps."claude-gate" ];
   withHoogle = false;
 
   buildInputs = [

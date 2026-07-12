@@ -3,7 +3,7 @@
 -- record-edit appends one JSON-encoded edit per line. The phases read it back to
 -- render diffs and to list the touched files; Phase A also returns a claimed
 -- stack to the live stack when its reviewer fails, so the next Stop retries.
-module Gate.EditStack
+module Claude.Gate.EditStack
   ( readEdits
   , stackFilePaths
   , stackHasCode
@@ -14,8 +14,8 @@ import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as StrictByteString
 import Data.ByteString.Char8 qualified as ByteString
 import Data.List (isSuffixOf, nub, sort)
-import Gate.Edit (Edit, editFilePath)
-import Gate.TurnState (TurnPaths (claimedStack, reviewStack), removeIfExists)
+import Claude.Gate.Edit (Edit, editFilePath)
+import Claude.Gate.TurnState (TurnPaths (claimedStack, reviewStack), removeIfExists)
 import System.Directory (doesFileExist)
 
 -- | Read a stack file back into edits. We wrote these lines ourselves, so a line
@@ -28,7 +28,7 @@ readEdits path = do
 decodeEdit :: ByteString.ByteString -> Edit
 decodeEdit raw = case Aeson.eitherDecodeStrict raw of
   Right edit -> edit
-  Left err -> error ("vibes-gate: corrupt edit on the review stack: " <> err)
+  Left err -> error ("claude-gate: corrupt edit on the review stack: " <> err)
 
 -- | The sorted, deduplicated file paths recorded on a stack file.
 stackFilePaths :: FilePath -> IO [FilePath]

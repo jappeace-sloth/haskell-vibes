@@ -72,12 +72,12 @@ let
 
   # The end-of-turn gate, compiled from ./gate. Replaces the old bash hook
   # trio (record-edit / reset-turn-state / stop-gate) with one binary exposing
-  # `vibes-gate record|reset|stop-gate`. justStaticExecutables keeps only the
+  # `claude-gate record|reset|stop-gate`. justStaticExecutables keeps only the
   # binary out of the image; dontCheck keeps the image build fast (the test
   # suite runs in the gate project's own CI, gate/nix/ci.nix).
-  vibesGate = pkgs.haskell.lib.justStaticExecutables
+  claudeGate = pkgs.haskell.lib.justStaticExecutables
     (pkgs.haskell.lib.dontCheck
-      (pkgs.haskellPackages.callCabal2nix "vibes-gate" ./gate { }));
+      (pkgs.haskellPackages.callCabal2nix "claude-gate" ./gate { }));
 
   entrypoint = pkgs.writeScript "entrypoint" (builtins.readFile ./entrypoint.sh);
   dockerEntrypoint = pkgs.writeScript "docker-entrypoint" (builtins.readFile ./docker-entrypoint.sh);
@@ -114,7 +114,7 @@ let
       pkgs.tmux
       tmuxMcp
       mcpHoogle
-      vibesGate
+      claudeGate
       (pkgs.writeTextDir "etc/image-manifest" ''
         mcp-hoogle-rev: ${builtins.substring 0 7 sources.mcp-hoogle.revision}
         mcp-server-rev: ${mcp-server-src.rev}

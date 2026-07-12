@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "vibes-gate reset"
+            "command": "claude-gate reset"
           }
         ]
       }
@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "vibes-gate record"
+            "command": "claude-gate record"
           }
         ]
       }
@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "vibes-gate stop-gate"
+            "command": "claude-gate stop-gate"
           }
         ]
       }

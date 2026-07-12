@@ -7,9 +7,9 @@ import Data.ByteString.Char8 qualified as ByteString
 import Data.List (isInfixOf)
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Gate.Corpus (selectSkills)
+import Claude.Gate.Corpus (selectSkills)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
-import Gate.Critique
+import Claude.Gate.Critique
   ( CritiqueDossier (DossierReady, EmptyDossier)
   , EditPresence (EditsRecorded, NoEditsRecorded)
   , RoundBudget (RoundBudget)
@@ -19,13 +19,13 @@ import Gate.Critique
   , recentClaims
   , retryWhileEmpty
   )
-import Gate.DiffRender (renderDiffs)
-import Gate.Edit (Edit (..), Replacement (..), editFilePath, parseEditFromTool)
-import Gate.RecordEdit (SkipReason (..), pathSkipReason)
-import Gate.ReviewPrompt (hasViolations)
-import Gate.SpawnAnnotation (annotateSpawn)
-import Gate.Transcript (turnAssistantText)
-import Gate.TurnState (readCounter, writeCounter)
+import Claude.Gate.DiffRender (renderDiffs)
+import Claude.Gate.Edit (Edit (..), Replacement (..), editFilePath, parseEditFromTool)
+import Claude.Gate.RecordEdit (SkipReason (..), pathSkipReason)
+import Claude.Gate.ReviewPrompt (hasViolations)
+import Claude.Gate.SpawnAnnotation (annotateSpawn)
+import Claude.Gate.Transcript (turnAssistantText)
+import Claude.Gate.TurnState (readCounter, writeCounter)
 import Hedgehog (Gen, Property, forAll, property, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
@@ -41,7 +41,7 @@ main = defaultMain tests
 tests :: TestTree
 tests =
   testGroup
-    "vibes-gate"
+    "claude-gate"
     [ transcriptTests
     , skillSelectionTests
     , skipReasonTests
@@ -191,7 +191,7 @@ counterTests =
     "TurnState counters"
     [ testCase "readCounter then writeCounter on the same path does not lock" $ do
         dir <- getTemporaryDirectory
-        let path = dir </> "vibes-gate-counter-roundtrip"
+        let path = dir </> "claude-gate-counter-roundtrip"
         writeCounter path 1
         previous <- readCounter path
         writeCounter path (previous + 1)
@@ -228,7 +228,7 @@ transcriptTests =
 claimsFor :: String -> [Text] -> IO Text
 claimsFor name transcriptLines = do
   tmp <- getTemporaryDirectory
-  let path = tmp </> ("vibes-gate-test-" <> name <> ".jsonl")
+  let path = tmp </> ("claude-gate-test-" <> name <> ".jsonl")
   writeFile path (Text.unpack (Text.unlines transcriptLines))
   turnAssistantText path
 
@@ -335,7 +335,7 @@ critiqueDiffTests =
 writeStack :: String -> [Edit] -> IO FilePath
 writeStack name edits = do
   tmp <- getTemporaryDirectory
-  let path = tmp </> ("vibes-gate-test-" <> name <> ".jsonl")
+  let path = tmp </> ("claude-gate-test-" <> name <> ".jsonl")
   LazyByteString.writeFile path (LazyByteString.intercalate "\n" (map encode edits))
   pure path
 

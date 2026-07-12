@@ -3,13 +3,13 @@
 -- Showing the diff (the old and new text) rather than the whole file keeps the
 -- prompt small and points the reviewer at exactly the text the agent wrote.
 -- The reviewer is told to only flag text in a "with"/"new content" section.
-module Gate.DiffRender
+module Claude.Gate.DiffRender
   ( renderDiffs
   ) where
 
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Gate.Edit (Edit (..), Replacement (..))
+import Claude.Gate.Edit (Edit (..), Replacement (..))
 
 -- | Render a turn's edits as one labelled block per edit, in order.
 renderDiffs :: [Edit] -> Text

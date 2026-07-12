@@ -8,7 +8,7 @@
 -- edits since the last explanation means the larger model accepted it. Bounded
 -- by CLAUDE_DUMBIFY_MAX_ROUNDS. Runs first so the cheap canary shapes the code
 -- before the expensive critic verifies the result.
-module Gate.Dumbify
+module Claude.Gate.Dumbify
   ( runDumbify
   ) where
 
@@ -16,15 +16,15 @@ import Control.Monad (when)
 import Data.Maybe (isJust)
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Gate.DiffRender (renderDiffs)
-import Gate.EditStack (readEdits, stackFilePaths, stackHasCode)
-import Gate.FileContext (renderFullFiles)
-import Gate.GateConfig (envInt, envStr, phaseDisabled)
-import Gate.HookProtocol (BlockReason (BlockReason), blockAndExit)
-import Gate.NestedClaude (NestedResult (NestedBroken, NestedOutput), Reviewer (Reviewer), runNested, surfaceNestedFailure)
-import Gate.Repo (repoForFiles)
-import Gate.ReviewPrompt (maxDiffPromptChars)
-import Gate.TurnState
+import Claude.Gate.DiffRender (renderDiffs)
+import Claude.Gate.EditStack (readEdits, stackFilePaths, stackHasCode)
+import Claude.Gate.FileContext (renderFullFiles)
+import Claude.Gate.GateConfig (envInt, envStr, phaseDisabled)
+import Claude.Gate.HookProtocol (BlockReason (BlockReason), blockAndExit)
+import Claude.Gate.NestedClaude (NestedResult (NestedBroken, NestedOutput), Reviewer (Reviewer), runNested, surfaceNestedFailure)
+import Claude.Gate.Repo (repoForFiles)
+import Claude.Gate.ReviewPrompt (maxDiffPromptChars)
+import Claude.Gate.TurnState
   ( TurnPaths (dumbifyApproved, dumbifyBroke, dumbifyDone, dumbifyEditmark, dumbifyRound, reviewStack)
   , fileNonEmpty
   , flagExists

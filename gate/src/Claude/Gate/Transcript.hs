@@ -5,7 +5,7 @@
 -- content, which is how the two are told apart. The critique phase refutes the
 -- prose the assistant produced since the most recent real user message, so we
 -- collect the text blocks of every assistant entry after that point.
-module Gate.Transcript
+module Claude.Gate.Transcript
   ( TranscriptLine(..)
   , classifyLine
   , turnAssistantText

@@ -3,18 +3,18 @@
 -- Three phases run in order over the per-turn state, mirroring the shell gate:
 --
 --   Phase 0 (dumbify). A cheap canary checks the changed code is understandable,
---   and the larger model simplifies it if not. See "Gate.Dumbify".
+--   and the larger model simplifies it if not. See "Claude.Gate.Dumbify".
 --   Phase 1 (critique). An adversarial critic tries to prove the work wrong with
---   tests and sources. See "Gate.Critique". (This replaced the old verification
+--   tests and sources. See "Claude.Gate.Critique". (This replaced the old verification
 --   nudge.)
 --   Phase A (rule review). The diffs are checked against the rules corpus. See
---   "Gate.RuleReview".
+--   "Claude.Gate.RuleReview".
 --
 -- Each phase may block the Stop (emit a reason and exit); later phases only run
 -- on a Stop that no earlier phase blocked. The phases converge across the turn's
 -- repeated Stops via per-phase flags on tmpfs. When every phase that ran cleared
 -- without blocking, a non-blocking "gate clear" notice names them.
-module Gate.StopGate
+module Claude.Gate.StopGate
   ( runStopGate
   ) where
 
@@ -22,11 +22,11 @@ import Control.Monad (unless)
 import Data.Maybe (catMaybes)
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Gate.Critique (runCritique)
-import Gate.Dumbify (runDumbify)
-import Gate.HookProtocol (HookEvent (sessionId, transcriptPath), emitSystemMessage, readHookEvent)
-import Gate.RuleReview (runRuleReview)
-import Gate.TurnState
+import Claude.Gate.Critique (runCritique)
+import Claude.Gate.Dumbify (runDumbify)
+import Claude.Gate.HookProtocol (HookEvent (sessionId, transcriptPath), emitSystemMessage, readHookEvent)
+import Claude.Gate.RuleReview (runRuleReview)
+import Claude.Gate.TurnState
   ( TurnPaths (critiqueApproved, dumbifyApproved, reviewApproved)
   , ensureStateDir
   , flagExists
