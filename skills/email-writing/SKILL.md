@@ -34,8 +34,13 @@ todo files and commit messages hold that material; the mail does not.
    overdracht" with the login URL and username so the client can act
    today.
 6. **Secrets never in the mail body.** Passwords go through an expiring
-   share link (veiligwachtwoorddelen.nl, expiry configurable per views
-   or hours; set it tight); the mail carries only the link.
+   share link on veiligwachtwoorddelen.nl (expiry configurable per
+   views or hours; set it tight); the mail carries only the link.
+   Deliberate choice (Jappie, 2026-07-18): the service is not
+   provably zero-knowledge, but it beats plaintext-in-mail, is not
+   worth replacing with self-hosting, and the passwords we hand out
+   are ugly generated ones the client is motivated to replace at
+   handover, which caps the damage of any leak.
 7. **Options carry their own trade-off.** Each option gets its price and
    a one-line pro/con inline. No separate "mijn advies"-paragraph; the
    list is the advice, the client chooses.
