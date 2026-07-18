@@ -33,9 +33,9 @@ todo files and commit messages hold that material; the mail does not.
 5. **Actionable beats promissory.** Replace "dat lopen we door bij de
    overdracht" with the login URL and username so the client can act
    today.
-6. **Secrets never in the mail body.** Passwords go through a one-time
-   share link (veiligwachtwoorddelen.nl); the mail carries only the
-   link.
+6. **Secrets never in the mail body.** Passwords go through an expiring
+   share link (veiligwachtwoorddelen.nl, expiry configurable per views
+   or hours; set it tight); the mail carries only the link.
 7. **Options carry their own trade-off.** Each option gets its price and
    a one-line pro/con inline. No separate "mijn advies"-paragraph; the
    list is the advice, the client chooses.
