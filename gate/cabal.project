@@ -1,0 +1,8 @@
+packages: .
+
+-- Decision: enable the manual `werror` flag for local/dev builds. The flag
+-- defaults to False in claude-gate.cabal so `cabal check` (and future GHCs)
+-- accept the package; developers and CI still compile with -Werror by turning
+-- it on here. The nix build does the same in nix/hpkgs.nix.
+package claude-gate
+  flags: +werror

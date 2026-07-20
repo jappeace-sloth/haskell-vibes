@@ -21,6 +21,10 @@ let
 in
 pkgs.haskellPackages.override {
   overrides = hnew: _hold: {
-    claude-gate = hnew.callCabal2nix "claude-gate" src { };
+    # Decision: enable the manual `werror` cabal flag in the nix build. The flag
+    # defaults to False so `cabal check` accepts the package, so CI has to turn
+    # it back on here to keep the build warning-clean. See claude-gate.cabal.
+    claude-gate = pkgs.haskell.lib.enableCabalFlag
+      (hnew.callCabal2nix "claude-gate" src { }) "werror";
   };
 }
