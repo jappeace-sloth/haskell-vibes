@@ -40,6 +40,14 @@ own project clone, but you cannot write back into it.
   instead. Standalone `-----` horizontal rules and table-separator `|---|`
   rows are fine; the rule is only about em-dashes used as punctuation
   inside a sentence.
+- Never open a bullet or paragraph with a bolded topic label
+  ("**Label.** prose", "*Kopje.* zin, daarna de echte inhoud"). Like
+  the em-dash it is a strong AI tell. Let the first sentence carry
+  its own topic; if a list truly needs scannable structure, use real
+  headings or table rows instead of inline mini-titles. Document
+  header fields ("*Datum:*", "*Offertenummer:*") are fine; the rule
+  is about prose openers (les: exact-print board-quote, 28 jul
+  2026).
 
 # Style
 - Avoid using wildcards on pattern matching if possible, always write out all cases.
