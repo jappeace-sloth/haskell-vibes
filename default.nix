@@ -101,6 +101,7 @@ let
       pkgs.cacert
       pkgs.gnugrep
       pkgs.gnused
+      pkgs.gawk # awk, missing from coreutils
       pkgs.which
       pkgs.claude-code
       pkgs.cowsay
