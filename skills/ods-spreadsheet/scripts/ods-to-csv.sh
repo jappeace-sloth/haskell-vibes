@@ -21,8 +21,12 @@ profile_dir=$(mktemp -d)
 export HOME="$profile_dir"
 export XDG_RUNTIME_DIR="$profile_dir"
 
-# Filter tokens: 44=comma 34=quote UTF8 FirstRow=1 ... last token -1 = export
-# ALL sheets (one file per sheet). Plain --convert-to csv drops sheet 2+.
+# Filter tokens, in order: FieldSeparator=44 (comma), TextDelimiter=34
+# (quote), CharSet=UTF8, FirstRow=1, CellFormats=(default), LanguageId=0,
+# QuotedFieldAsText=false, DetectSpecialNumbers=true,
+# SaveCellContentsAsShown=true, ExportCellFormulas=false,
+# RemoveSpacesFromCells=false, SheetToExport=-1. That last -1 exports ALL
+# sheets, one file per sheet; plain --convert-to csv drops sheet 2+.
 filter='csv:Text - txt - csv (StarCalc):44,34,UTF8,1,,0,false,true,true,false,false,-1'
 
 if command -v soffice >/dev/null 2>&1; then
