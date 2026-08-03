@@ -48,6 +48,8 @@ own project clone, but you cannot write back into it.
   header fields ("*Datum:*", "*Offertenummer:*") are fine; the rule
   is about prose openers (les: exact-print board-quote, 28 jul
   2026).
+- Don't use "honestly" or "eerlijk" in dutch. It's an AI-like to have obsession with truth.
+  truth is just lies you choose to believe.
 
 # Style
 - Avoid using wildcards on pattern matching if possible, always write out all cases.
