@@ -16,8 +16,8 @@
     "nixpkgs": {
       "type": "Channel",
       "name": "nixpkgs-unstable",
-      "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.11pre1025900.e8273b29fe13/nixexprs.tar.xz",
-      "hash": "sha256-mFP086y1bNA1g9AsY/pCue3H3W2R7ayroHyRbZrcMf0="
+      "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.11pre1042268.d3498f786f97/nixexprs.tar.xz",
+      "hash": "sha256-Jww2+DH/TDKEOLOMj/MVBqeSFLTN6tFya3qCV0OfjEg="
     },
     "tmux-mcp": {
       "type": "Git",
@@ -30,7 +30,8 @@
       "submodules": false,
       "revision": "626ec376ccfa916ee94bd5f662ea263b0763cfeb",
       "url": "https://github.com/bnomei/tmux-mcp/archive/626ec376ccfa916ee94bd5f662ea263b0763cfeb.tar.gz",
-      "hash": "sha256-PuhTT6Bd3HLLzXGvgfFmFV+P2OfXgXmKhnMYHcz6jDI="
+      "hash": "sha256-PuhTT6Bd3HLLzXGvgfFmFV+P2OfXgXmKhnMYHcz6jDI=",
+      "frozen": true
     }
   },
   "version": 7
