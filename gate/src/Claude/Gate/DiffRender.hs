@@ -40,10 +40,10 @@ supersedeNote =
   \files via shell commands, which are not recorded here), the full file is the\n\
   \authoritative final state; do not report such a difference as a finding.\n\n"
 
--- | Drop every edit that a later full-content write of the same file makes
--- irrelevant: only the last 'WriteFileContent' / 'NotebookCellSource' of a
--- file and the incremental edits after it describe the state a reviewer sees.
--- Edits to other files are untouched and the overall order is preserved.
+-- | Keep, per file, only the last 'WriteFileContent' / 'NotebookCellSource'
+-- and the incremental edits after it: that suffix describes the state a
+-- reviewer sees, everything before it is a superseded snapshot. Edits to
+-- other files are untouched and the overall order is preserved.
 collapseSupersededEdits :: [Edit] -> [Edit]
 collapseSupersededEdits edits =
   map snd (filter (editStillCurrent (zip [0 ..] edits)) (zip [0 ..] edits))
