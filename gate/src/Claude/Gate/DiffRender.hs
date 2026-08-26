@@ -3,17 +3,71 @@
 -- Showing the diff (the old and new text) rather than the whole file keeps the
 -- prompt small and points the reviewer at exactly the text the agent wrote.
 -- The reviewer is told to only flag text in a "with"/"new content" section.
+--
+-- Decision: edits superseded by a later full-content write of the same file
+-- are dropped before rendering, and the block opens with a note that the full
+-- file is the authoritative final state. Long turns (mid-turn user steering)
+-- produce several rewrites of one file; showing every stale snapshot made
+-- reviewers report "the diffs contradict the full file" as a blocking finding
+-- against code that was fine. The alternative, rendering a real
+-- turn-start-to-now diff per file, was rejected: record runs on PostToolUse,
+-- so no pre-edit baseline exists to diff against, and shell-made edits bypass
+-- recording entirely either way.
 module Claude.Gate.DiffRender
   ( renderDiffs
+  , collapseSupersededEdits
   ) where
 
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Claude.Gate.Edit (Edit (..), Replacement (..))
+import Claude.Gate.Edit (Edit (..), Replacement (..), editFilePath)
 
--- | Render a turn's edits as one labelled block per edit, in order.
+-- | Render a turn's edits as one labelled block per edit, in order, after
+-- dropping superseded snapshots. Empty input renders empty (no note).
 renderDiffs :: [Edit] -> Text
-renderDiffs = Text.concat . map renderOne
+renderDiffs edits = case collapseSupersededEdits edits of
+  [] -> ""
+  collapsed -> supersedeNote <> Text.concat (map renderOne collapsed)
+
+-- | Shown once above the diff blocks. The agent may also edit files through
+-- shell commands the hooks never see, so reviewers must treat the full file
+-- as final rather than expect the diffs to reconstruct it.
+supersedeNote :: Text
+supersedeNote =
+  "NOTE: edits are listed in the order they were applied; for files that were\n\
+  \rewritten during the turn, earlier superseded snapshots are omitted. Where a\n\
+  \diff and the full current file contents disagree (e.g. the agent also edited\n\
+  \files via shell commands, which are not recorded here), the full file is the\n\
+  \authoritative final state; do not report such a difference as a finding.\n\n"
+
+-- | Keep, per file, only the last 'WriteFileContent' / 'NotebookCellSource'
+-- and the incremental edits after it: that suffix describes the state a
+-- reviewer sees, everything before it is a superseded snapshot. Edits to
+-- other files are untouched and the overall order is preserved.
+collapseSupersededEdits :: [Edit] -> [Edit]
+collapseSupersededEdits edits =
+  map snd (filter (editStillCurrent (zip [0 ..] edits)) (zip [0 ..] edits))
+
+editStillCurrent :: [(Int, Edit)] -> (Int, Edit) -> Bool
+editStillCurrent allEdits (index, edit) =
+  index >= lastFullContentIndex allEdits (editFilePath edit)
+
+-- | The index of the last full-content edit of the given file, or 0 when the
+-- file only ever received incremental edits (index 0 never drops anything).
+lastFullContentIndex :: [(Int, Edit)] -> FilePath -> Int
+lastFullContentIndex allEdits path =
+  foldl' max 0 (map fst (filter (isFullContentFor path) allEdits))
+
+isFullContentFor :: FilePath -> (Int, Edit) -> Bool
+isFullContentFor path (_, edit) =
+  editFilePath edit == path && isFullContent edit
+
+isFullContent :: Edit -> Bool
+isFullContent edit = case edit of
+  WriteFileContent _ _ -> True
+  NotebookCellSource _ _ -> True
+  SingleEdit _ _ -> False
+  MultiEditFile _ _ -> False
 
 renderOne :: Edit -> Text
 renderOne edit =

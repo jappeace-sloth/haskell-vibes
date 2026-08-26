@@ -19,7 +19,7 @@ import Claude.Gate.Critique
   , recentClaims
   , retryWhileEmpty
   )
-import Claude.Gate.DiffRender (renderDiffs)
+import Claude.Gate.DiffRender (collapseSupersededEdits, renderDiffs)
 import Claude.Gate.Edit (Edit (..), Replacement (..), editFilePath, parseEditFromTool)
 import Claude.Gate.RecordEdit (SkipReason (..), pathSkipReason)
 import Claude.Gate.ReviewPrompt (hasViolations)
@@ -47,6 +47,7 @@ tests =
     , skipReasonTests
     , violationTests
     , editRoundTripTests
+    , supersedeTests
     , editPropertyTests
     , critiqueDiffTests
     , recentClaimsTests
@@ -308,6 +309,45 @@ editRoundTripTests =
         edit <- parsedEdit "Write" "{\"file_path\":\"a.txt\",\"content\":\"hello body\"}"
         reloaded <- reencode edit
         assertBool "content under --- new content ---" (Text.isInfixOf "--- new content ---\nhello body" (renderDiffs [reloaded]))
+    ]
+
+supersedeTests :: TestTree
+supersedeTests =
+  testGroup
+    "superseded-edit collapse"
+    [ testCase "a later Write drops the earlier Write of the same file" $
+        collapseSupersededEdits [WriteFileContent "a.hs" "v1", WriteFileContent "a.hs" "v2"]
+          @?= [WriteFileContent "a.hs" "v2"]
+    , testCase "an Edit after the last Write survives" $
+        collapseSupersededEdits
+          [ WriteFileContent "a.hs" "v1"
+          , WriteFileContent "a.hs" "v2"
+          , SingleEdit "a.hs" (Replacement "v2" "v3")
+          ]
+          @?= [WriteFileContent "a.hs" "v2", SingleEdit "a.hs" (Replacement "v2" "v3")]
+    , testCase "an Edit before the last Write is superseded" $
+        collapseSupersededEdits
+          [ SingleEdit "a.hs" (Replacement "x" "y")
+          , WriteFileContent "a.hs" "v2"
+          ]
+          @?= [WriteFileContent "a.hs" "v2"]
+    , testCase "other files keep their edits and the overall order" $
+        collapseSupersededEdits
+          [ WriteFileContent "a.hs" "a1"
+          , SingleEdit "b.hs" (Replacement "old" "new")
+          , WriteFileContent "a.hs" "a2"
+          ]
+          @?= [SingleEdit "b.hs" (Replacement "old" "new"), WriteFileContent "a.hs" "a2"]
+    , testCase "an Edit-only file is untouched" $
+        collapseSupersededEdits
+          [ SingleEdit "c.hs" (Replacement "p" "q")
+          , SingleEdit "c.hs" (Replacement "q" "r")
+          ]
+          @?= [SingleEdit "c.hs" (Replacement "p" "q"), SingleEdit "c.hs" (Replacement "q" "r")]
+    , testCase "the rendered block carries the authoritative-file note" $
+        assertBool "note present" (Text.isInfixOf "authoritative final state" (renderDiffs [WriteFileContent "a.hs" "v"]))
+    , testCase "no edits render empty, without the note" $
+        renderDiffs [] @?= ""
     ]
 
 -- The critic runs on every turn, including conversational ones with no edits. On
