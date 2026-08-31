@@ -78,6 +78,21 @@ own project clone, but you cannot write back into it.
 - We only test the current codebase, libraries are assumed to work.
 - Demo/test apps (e.g. imageDemoApp, scrollDemoApp) belong in test/ entry points, NOT in the library. Integration test entry points (test/*DemoMain.hs) should be self-contained — define the demo app inline rather than importing it from the library.
 
+# Secrets
+- AI shouldn't be using secrets. Everything an agent reads (chat,
+  files, command output) is sent to the model provider, so a secret
+  that touches the conversation has left the machine.
+- NEVER ask the user to put a secret in chat, not even once. Stage
+  the work so only the secret is missing, then point the user at the
+  exact field where they enter it themselves (les: waardegebaar
+  Zoho-wachtwoord, 31 aug 2026: FluentSMTP opgezet met
+  placeholder-wachtwoord, Jappie plakt het echte wachtwoord zelf in
+  de admin).
+- Giving AI access to .age files is maybe acceptable if the system
+  behind the secret is isolated (eg a WordPress site or a Shopify
+  store): the damage radius is that one system. Secrets that open
+  mail, payments or infrastructure stay with the user.
+
 # Decision Log
 - When making significant architectural choices (library selection, design patterns,
   data representation), record the decision as a comment near the relevant code.
