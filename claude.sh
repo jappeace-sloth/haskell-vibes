@@ -306,8 +306,9 @@ launch_nspawn() {
     # --resolv-conf=bind-host shares the host's /etc/resolv.conf.
     # --system-call-filter=perf_event_open lets `perf stat/record` work
     # inside the instance (nspawn's default seccomp filter blocks the
-    # syscall, which reduced the 1br performance hunt to ablation
-    # guesswork). kernel.perf_event_paranoid still applies on top, so
+    # syscall, which reduced the one-billion-row-challenge performance
+    # hunt in jappeace/1br to ablation guesswork instead of one
+    # `perf stat` run). kernel.perf_event_paranoid still applies on top, so
     # this only enables self-profiling, not system-wide snooping.
     # (No `exec sudo …` — we want the EXIT trap to run after nspawn returns.)
     sudo systemd-nspawn \
