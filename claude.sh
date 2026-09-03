@@ -304,12 +304,18 @@ launch_nspawn() {
     # --as-pid2 puts systemd-stub at PID 1 so zombies from chromium/playwright
     # get reaped instead of accumulating.
     # --resolv-conf=bind-host shares the host's /etc/resolv.conf.
+    # --system-call-filter=perf_event_open lets `perf stat/record` work
+    # inside the instance (nspawn's default seccomp filter blocks the
+    # syscall, which reduced the 1br performance hunt to ablation
+    # guesswork). kernel.perf_event_paranoid still applies on top, so
+    # this only enables self-profiling, not system-wide snooping.
     # (No `exec sudo …` — we want the EXIT trap to run after nspawn returns.)
     sudo systemd-nspawn \
         --machine="$INSTANCE_NAME" \
         --hostname="$INSTANCE_NAME" \
         --directory="$RUNTIME_ROOT" \
         --as-pid2 \
+        --system-call-filter=perf_event_open \
         --resolv-conf=bind-host \
         --bind=/nix \
         --bind="$INSTANCE_JSON:/home/claude/.claude.json" \
