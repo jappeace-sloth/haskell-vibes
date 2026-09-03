@@ -189,6 +189,8 @@ clear_stale_machine() {
         return 0
     fi
 
+    # Leader is a uint32 PID on the D-Bus machine object; it serializes to
+    # "0" when unset, so 0 means "no leader recorded", not pid 0.
     LEADER_PID=$(machinectl show "$INSTANCE_NAME" --property=Leader --value)
     if [ -n "$LEADER_PID" ] && [ "$LEADER_PID" != "0" ] && [ -d "/proc/$LEADER_PID" ]; then
         echo "Error: instance '$INSTANCE_NAME' is already running (leader pid $LEADER_PID)." >&2
