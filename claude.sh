@@ -163,9 +163,59 @@ launch_docker() {
 }
 
 # ---------------------------------------------------------------------------
+# Stale machine cleanup (Linux/nspawn)
+# ---------------------------------------------------------------------------
+# Decision: clear leftover systemd state before launching instead of letting
+# systemd-nspawn fail with "Machine '<name>' already exists" and making the
+# user retry. An unclean exit (Ctrl-C, closed terminal, host kill) leaves two
+# kinds of debris behind even though no container is running anymore:
+#   1. machine-<name>.scope stuck in systemd's "failed" state, and
+#   2. a systemd-machined registration whose teardown is still in flight.
+# Alternatives considered: --keep-unit (changes the cgroup layout for no
+# gain) and documenting `machinectl terminate` as a manual fixup (that manual
+# retry is exactly the annoyance this removes). A machine whose leader
+# process is still alive is genuinely running: refuse to double-launch it
+# rather than killing it. Liveness is checked via /proc/<leader>, not
+# `kill -0`, because the leader is root-owned and kill -0 from the invoking
+# user reports EPERM, which would misread a live machine as dead.
+clear_stale_machine() {
+    MACHINE_SCOPE="machine-${INSTANCE_NAME}.scope"
+
+    if systemctl is-failed --quiet "$MACHINE_SCOPE"; then
+        sudo systemctl reset-failed "$MACHINE_SCOPE"
+    fi
+
+    if ! machinectl show "$INSTANCE_NAME" > /dev/null 2>&1; then
+        return 0
+    fi
+
+    LEADER_PID=$(machinectl show "$INSTANCE_NAME" --property=Leader --value)
+    if [ -n "$LEADER_PID" ] && [ "$LEADER_PID" != "0" ] && [ -d "/proc/$LEADER_PID" ]; then
+        echo "Error: instance '$INSTANCE_NAME' is already running (leader pid $LEADER_PID)." >&2
+        echo "Stop it first with: sudo machinectl terminate $INSTANCE_NAME" >&2
+        exit 1
+    fi
+
+    # The registration is stale (leader gone). Tear it down and wait for
+    # machined to drop it so the launch below cannot race the cleanup.
+    # terminate can itself fail when machined drops the record between the
+    # check above and this call; the poll below is the real verification.
+    sudo machinectl terminate "$INSTANCE_NAME" || sudo systemctl stop "$MACHINE_SCOPE" || true
+    for _ in $(seq 1 30); do
+        if ! machinectl show "$INSTANCE_NAME" > /dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+    done
+    echo "Error: machine '$INSTANCE_NAME' is still registered after 30s of cleanup." >&2
+    exit 1
+}
+
+# ---------------------------------------------------------------------------
 # systemd-nspawn backend (Linux)
 # ---------------------------------------------------------------------------
 launch_nspawn() {
+    clear_stale_machine
     NIX_ARGS_ARRAY=(./default.nix --arg uid "$(id -u)" --arg gid "$(id -g)")
 
     # Build the rootfs env and the entrypoint script, keeping the result
