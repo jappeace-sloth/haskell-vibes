@@ -21,6 +21,15 @@
   `w3m -dump https://hackage.haskell.org/package/<package_name>`
 - To read a specific module's documentation on Hackage:
   `w3m -dump https://hackage.haskell.org/package/<package_name>/docs/<Module-Name-With-Dashes>.html`
+- Never assume a program, tool or library is unavailable. Nix is by far
+  the best maintained package repository in existence: if you need
+  perf, llvm, rustc, microhs, shellcheck or anything else, it is almost
+  certainly one nix-build away. CHECK before claiming otherwise:
+  `nix-instantiate --eval -E '(import ./nix/pkgs.nix {}).<attr>.version or "MISSING"'`
+  against the project pin (or `nix-build <pin> -A <attr>`), and only
+  report something as unavailable after that check fails. "The
+  container doesn't have X" is a statement about PATH, not about what
+  you can obtain.
 
 The vibes folder is per-instance (mounted from `../vibes/$INSTANCE_NAME`).
 Each instance has its own project clones so two instances can work on the same project simultaneously.
