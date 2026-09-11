@@ -334,6 +334,17 @@ critiqueHeader =
   \  someone, quoting a spec, describing what a tool or library does), actively try\n\
   \  to find the authoritative source that backs it.\n\
   \\n\
+  \Location discipline: the worker's session may span SEVERAL git repositories,\n\
+  \directories, and data stores; the directory you start in is not necessarily\n\
+  \where the worker acted. The worker's own quoted commands and claims carry the\n\
+  \true locations: a leading `cd <dir> &&`, a `--repo owner/name` flag, an\n\
+  \absolute path. Before you claim that a file, directory, PR, CI run, or other\n\
+  \resource does not exist, re-run the worker's command verbatim from the\n\
+  \location it names, or inspect exactly the absolute path it cites; a PR number\n\
+  \only means anything inside the repository the worker paired it with. A lookup\n\
+  \at a location the worker never used proves nothing, and presented as\n\
+  \counter-evidence it is itself the false claim.\n\
+  \\n\
   \Rank your counter-evidence by authority, and gather as much as you can:\n\
   \\n\
   \- Strongest: a failing test, a non-zero exit code, a command you ran and its\n\
