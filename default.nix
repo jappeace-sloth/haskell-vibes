@@ -104,6 +104,7 @@ let
       pkgs.gawk # awk, missing from coreutils
       pkgs.which
       pkgs.claude-code
+      pkgs.opencode # open-source harness with ChatGPT/OpenAI login, launched with `--agent opencode`
       pkgs.cowsay
       pkgs.util-linux
       pkgs.imagemagick # convert/mogrify/identify for image editing

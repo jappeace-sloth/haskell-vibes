@@ -87,6 +87,20 @@ To start any instance without the project's CLAUDE.md and skills mounted, pass `
 ./claude.sh <instance_name> --vanilla
 ```
 
+To run an instance on [opencode](https://opencode.ai) instead of Claude Code
+(for example with a ChatGPT Plus/Pro subscription), pass `--agent opencode`:
+```
+./claude.sh <instance_name> --agent opencode
+```
+Everything else stays the same: the container, the vibes clone, the GitHub
+bot, the MCP servers (playwright, hoogle, tmux) and `CLAUDE.md` plus `skills/`,
+which opencode reads through its Claude Code compatibility fallbacks. On the
+first launch run `/connect` inside the TUI, pick OpenAI and then ChatGPT
+Plus/Pro, and open the printed URL in the host browser; the login lands in
+`instances/<name>-opencode/` and is reused on later launches. Pick a model with
+`/models`. The end-of-turn gate (`claude-gate`) is Claude Code only and does
+not run under opencode.
+
 Each instance gets its own persistent state in `instances/<name>/` (Claude memory, settings)
 and `instances/<name>.json` (Claude session config).
 You can spin up multiple instances in separate terminals simultaneously.
