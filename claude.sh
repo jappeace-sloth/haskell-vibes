@@ -11,7 +11,7 @@ set -xe
 
 if [ -z "$1" ]; then
     echo "Error: Instance name required."
-    echo "Usage: $0 <instance_name> [--vanilla]"
+    echo "Usage: $0 <instance_name> [--vanilla] [--agent claude|opencode]"
     exit 1
 fi
 
@@ -19,12 +19,34 @@ INSTANCE_NAME="$1"
 shift
 
 VANILLA=0
-for arg in "$@"; do
-    case "$arg" in
+AGENT=claude
+while [ $# -gt 0 ]; do
+    case "$1" in
         --vanilla) VANILLA=1 ;;
-        *) echo "Error: unknown argument '$arg'"; exit 1 ;;
+        --agent)
+            shift
+            AGENT="${1:?--agent needs a value: claude or opencode}" ;;
+        *) echo "Error: unknown argument '$1'"; exit 1 ;;
     esac
+    shift
 done
+
+# Decision: the harness is a launcher flag (`--agent opencode`) on the same
+# instance name, not a separate launcher script. Everything else about an
+# instance (container, vibes clone, character, GitHub bot, ssh key, MCP
+# servers) is harness-independent, and opencode reads ~/.claude/CLAUDE.md
+# and ~/.claude/skills as Claude Code fallbacks, so the existing config
+# mounts carry over unchanged. Alternative considered: a copy of this script
+# per harness. Rejected: the nspawn/docker plumbing is the bulk of the file
+# and would drift. Only the final command, opencode's config file and its
+# state directory differ. `codex` (the OpenAI CLI) is not wired: Jappie
+# prefers opencode for the experiment, and the claude-gate hooks are not
+# ported to any non-Claude harness yet, so opencode runs without the Stop
+# gate.
+case "$AGENT" in
+    claude|opencode) ;;
+    *) echo "Error: unknown agent '$AGENT' (expected claude or opencode)"; exit 1 ;;
+esac
 
 mkdir -p "../vibes/$INSTANCE_NAME"
 
@@ -47,6 +69,16 @@ mkdir -p "$AANLEVERINGEN_DIR"
 INSTANCE_DIR="$(pwd)/instances/$INSTANCE_NAME"
 INSTANCE_JSON="$(pwd)/instances/${INSTANCE_NAME}.json"
 
+# Decision: opencode keeps its state (auth.json with the ChatGPT OAuth
+# token, the session database, logs) under ~/.local/share/opencode. It is
+# persisted per instance in instances/<name>-opencode, a sibling of
+# instances/<name>, and not inside it: instances/<name> is bind-mounted as
+# ~/.claude, so anything placed there would surface in Claude Code's state
+# directory. The directory is created even for --agent claude so a later
+# switch finds it in place.
+OPENCODE_DATA_DIR="$(pwd)/instances/${INSTANCE_NAME}-opencode"
+mkdir -p "$OPENCODE_DATA_DIR"
+
 if [ ! -d "$INSTANCE_DIR" ]; then
     mkdir -p "$INSTANCE_DIR"
 fi
@@ -64,6 +96,28 @@ fi
 MCP_CONFIG='{"playwright":{"command":"playwright-mcp","args":["--headless","--no-sandbox","--isolated","--ignore-https-errors","--executable-path","/usr/local/bin/chromium"]},"hoogle":{"command":"mcp-hoogle","args":["serve"]},"tmux":{"command":"tmux-mcp-rs","args":[]}}'
 UPDATED_JSON=$(jq --argjson mcp "$MCP_CONFIG" 'del(.mcpServers) | .mcpServers = $mcp | if .projects then .projects |= map_values(del(.mcpServers)) else . end' "$INSTANCE_JSON")
 echo "$UPDATED_JSON" > "$INSTANCE_JSON"
+
+# Decision: opencode's global config is derived from MCP_CONFIG with jq
+# instead of being a second hand-maintained server list, so both harnesses
+# always get the same MCP servers. `permission: "allow"` is opencode's
+# bypassPermissions: the container is the sandbox, exactly as for claude.
+# No model is pinned because which OpenAI models a ChatGPT plan exposes
+# varies; the user picks one with /models and opencode remembers it in its
+# state dir. autoupdate is off because the binary comes from nix. The file
+# is written into the per-launch config snapshot and bind-mounted read-only
+# like CLAUDE.md, so the agent cannot widen its own permissions.
+write_opencode_config() {
+    jq -n --argjson mcp "$MCP_CONFIG" '{
+        "$schema": "https://opencode.ai/config.json",
+        autoupdate: false,
+        permission: "allow",
+        mcp: ($mcp | with_entries(.value = {
+            type: "local",
+            command: ([.value.command] + .value.args),
+            enabled: true
+        }))
+    }' > "$1/opencode.json"
+}
 
 NIX_ARGS="./default.nix --arg uid $(id -u) --arg gid $(id -g)"
 
@@ -125,6 +179,14 @@ launch_docker() {
         CONFIG_MOUNTS+=("-v" "$CONFIG_SNAPSHOT/skills:/home/claude/.claude/skills")
     fi
 
+    # Harness-specific mounts: opencode's read-only config and its state dir.
+    AGENT_MOUNTS=()
+    if [ "$AGENT" = "opencode" ]; then
+        write_opencode_config "$CONFIG_SNAPSHOT"
+        AGENT_MOUNTS+=("-v" "$CONFIG_SNAPSHOT/opencode.json:/home/claude/.config/opencode/opencode.json:ro")
+        AGENT_MOUNTS+=("-v" "$OPENCODE_DATA_DIR:/home/claude/.local/share/opencode")
+    fi
+
     docker run -it \
         --name "$INSTANCE_NAME" \
         --hostname "$INSTANCE_NAME" \
@@ -152,6 +214,7 @@ launch_docker() {
         -v "$(pwd)/instances/${INSTANCE_NAME}":/home/claude/.claude \
         -v "$(pwd)/settings.json":/home/claude/.claude/settings.json \
         "${CONFIG_MOUNTS[@]}" \
+        "${AGENT_MOUNTS[@]}" \
         -v "$(pwd)/../vibes/$INSTANCE_NAME":/home/claude/vibes \
         `# shared read-only client-deliveries inbox, synced by Syncthing host-side` \
         -v "$AANLEVERINGEN_DIR":/home/claude/aanleveringen:ro \
@@ -159,7 +222,7 @@ launch_docker() {
         -v "$CONFIG_SNAPSHOT/character":/home/claude/character \
         --rm \
         claude-env:latest \
-        claude
+        "$AGENT"
 }
 
 # ---------------------------------------------------------------------------
@@ -260,8 +323,11 @@ launch_nspawn() {
         "$RUNTIME_ROOT/home/claude/.claude" \
         "$RUNTIME_ROOT/home/claude/vibes" \
         "$RUNTIME_ROOT/home/claude/aanleveringen" \
-        "$RUNTIME_ROOT/home/claude/character"
+        "$RUNTIME_ROOT/home/claude/character" \
+        "$RUNTIME_ROOT/home/claude/.config/opencode" \
+        "$RUNTIME_ROOT/home/claude/.local/share/opencode"
     touch "$RUNTIME_ROOT/home/claude/.claude.json"
+    touch "$RUNTIME_ROOT/home/claude/.config/opencode/opencode.json"
 
     # Snapshot the read-only config group (CLAUDE.md, skills, character) into a
     # private per-launch copy and mount THOSE, instead of binding the live
@@ -288,6 +354,18 @@ launch_nspawn() {
         cp -a "$(pwd)/skills" "$CONFIG_SNAPSHOT/skills"
         CONFIG_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/CLAUDE.md:/home/claude/.claude/CLAUDE.md")
         CONFIG_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/skills:/home/claude/.claude/skills")
+    fi
+
+    # Harness-specific binds: opencode's read-only config and its state dir.
+    # The ChatGPT login (/connect in the TUI) opens a browser URL and waits
+    # for a localhost callback; nspawn shares the host network namespace
+    # here (no --private-network), so opening the URL in the host browser
+    # completes the login inside the container.
+    AGENT_BINDS=()
+    if [ "$AGENT" = "opencode" ]; then
+        write_opencode_config "$CONFIG_SNAPSHOT"
+        AGENT_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/opencode.json:/home/claude/.config/opencode/opencode.json")
+        AGENT_BINDS+=("--bind=$OPENCODE_DATA_DIR:/home/claude/.local/share/opencode")
     fi
 
     REDDIT_SETENV=()
@@ -322,6 +400,7 @@ launch_nspawn() {
         --bind="$INSTANCE_DIR:/home/claude/.claude" \
         --bind="$(pwd)/settings.json:/home/claude/.claude/settings.json" \
         "${CONFIG_BINDS[@]}" \
+        "${AGENT_BINDS[@]}" \
         --bind="$(pwd)/../vibes/$INSTANCE_NAME:/home/claude/vibes" \
         `# shared read-only client-deliveries inbox, synced by Syncthing host-side` \
         --bind-ro="$AANLEVERINGEN_DIR:/home/claude/aanleveringen" \
@@ -342,7 +421,7 @@ launch_nspawn() {
         --setenv=GH_TOKEN="$(cat ~/.gh_token)" \
         "${REDDIT_SETENV[@]}" \
         "${KVM_BIND[@]}" \
-        "$ENTRYPOINT_PATH" claude
+        "$ENTRYPOINT_PATH" "$AGENT"
 }
 
 # ---------------------------------------------------------------------------

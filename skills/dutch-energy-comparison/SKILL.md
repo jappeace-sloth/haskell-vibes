@@ -4,7 +4,7 @@ description: >
   Compare Dutch energy providers and find the cheapest option. Use when the user asks
   about energy providers in the Netherlands, switching energy contracts, comparing gas/electricity
   rates, or wants their annual energy comparison updated.
-argument-hint: [electricity-kwh-per-month] [gas-m3-per-month]
+argument-hint: "[electricity-kwh-per-month] [gas-m3-per-month]"
 disable-model-invocation: true
 ---
 
