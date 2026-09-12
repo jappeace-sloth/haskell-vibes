@@ -13,6 +13,19 @@
       "url": "https://github.com/jappeace/mcp-hoogle/archive/86f5cba8155440e5e04693fde5929750a8da29a2.tar.gz",
       "hash": "sha256-nexbVZU64sasdmCWDth4MzZJsV3CKCXT5YjPQbHF6vA="
     },
+    "models-dev": {
+      "type": "Git",
+      "repository": {
+        "type": "GitHub",
+        "owner": "anomalyco",
+        "repo": "models.dev"
+      },
+      "branch": "dev",
+      "submodules": false,
+      "revision": "b03ecbe4c939474fbad7aaec83ad36fe0e7a6b67",
+      "url": "https://github.com/anomalyco/models.dev/archive/b03ecbe4c939474fbad7aaec83ad36fe0e7a6b67.tar.gz",
+      "hash": "sha256-2plru06PZRPrZ4fmjCBrY558CH23vb3+HqqFHfNeXnM="
+    },
     "nixpkgs": {
       "type": "Channel",
       "name": "nixpkgs-unstable",

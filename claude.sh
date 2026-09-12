@@ -119,6 +119,22 @@ write_opencode_config() {
     }' > "$1/opencode.json"
 }
 
+# Decision: opencode's own models.dev fetch is disabled
+# (OPENCODE_DISABLE_MODELS_FETCH=1) and the catalogue is the file nix bakes
+# into the image at /etc/opencode/models.json (OPENCODE_MODELS_PATH), see
+# modelsDev in default.nix. Observed on lenovo-tablet (2026-09-12): the TUI
+# died at startup with "Failed to fetch models.dev: Refusing to release:
+# lock is compromised (metadata missing)". The forked background refresh in
+# opencode (packages/core/src/models-dev.ts + util/flock.ts) takes a file
+# lock, and a failed release there is an Effect defect that disposes the
+# whole instance; the same code is `orDie` on the network fetch, so no
+# route to models.opencode.ai kills it the same way. With the refresh
+# disabled no lock is taken and no network is needed at startup. Both
+# variables are passed on the launcher side rather than baked into the
+# image's environment because nspawn's --setenv list replaces the
+# environment wholesale (same reason as the nix-path note in default.nix).
+OPENCODE_MODELS_ENV=("OPENCODE_DISABLE_MODELS_FETCH=1" "OPENCODE_MODELS_PATH=/etc/opencode/models.json")
+
 NIX_ARGS="./default.nix --arg uid $(id -u) --arg gid $(id -g)"
 
 # ---------------------------------------------------------------------------
@@ -180,11 +196,17 @@ launch_docker() {
     fi
 
     # Harness-specific mounts: opencode's read-only config and its state dir.
+    # opencode treats its working directory as the project; the docker image's
+    # WorkingDir is already /home/claude (see the nspawn note on why not the
+    # vibes clone).
     AGENT_MOUNTS=()
     if [ "$AGENT" = "opencode" ]; then
         write_opencode_config "$CONFIG_SNAPSHOT"
         AGENT_MOUNTS+=("-v" "$CONFIG_SNAPSHOT/opencode.json:/home/claude/.config/opencode/opencode.json:ro")
         AGENT_MOUNTS+=("-v" "$OPENCODE_DATA_DIR:/home/claude/.local/share/opencode")
+        for models_var in "${OPENCODE_MODELS_ENV[@]}"; do
+            AGENT_MOUNTS+=("-e" "$models_var")
+        done
     fi
 
     docker run -it \
@@ -361,11 +383,25 @@ launch_nspawn() {
     # for a localhost callback; nspawn shares the host network namespace
     # here (no --private-network), so opening the URL in the host browser
     # completes the login inside the container.
+    # Decision: opencode gets --chdir=/home/claude; claude keeps nspawn's
+    # default cwd "/" because Claude Code keys its per-project memory on the
+    # cwd and moving it would orphan every instance's memory. opencode treats
+    # the cwd as its project: "/" made it index the container root (seen in
+    # the ryan log as directory=/), and /home/claude/vibes was tried first
+    # but its project scan over the whole clone tree hung a prompt for >90s
+    # in a test. The home dir bootstraps in under a second; opencode logs a
+    # warning that its file picker skips home directories, which is fine.
+    # The agent cds into a repo under ~/vibes itself, or is given one as
+    # `opencode <project>`.
     AGENT_BINDS=()
     if [ "$AGENT" = "opencode" ]; then
         write_opencode_config "$CONFIG_SNAPSHOT"
         AGENT_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/opencode.json:/home/claude/.config/opencode/opencode.json")
         AGENT_BINDS+=("--bind=$OPENCODE_DATA_DIR:/home/claude/.local/share/opencode")
+        AGENT_BINDS+=("--chdir=/home/claude")
+        for models_var in "${OPENCODE_MODELS_ENV[@]}"; do
+            AGENT_BINDS+=("--setenv=$models_var")
+        done
     fi
 
     REDDIT_SETENV=()
