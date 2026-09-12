@@ -99,8 +99,10 @@ which opencode reads through its Claude Code compatibility fallbacks. On the
 first launch run `/connect` inside the TUI, pick OpenAI and then ChatGPT
 Plus/Pro, and open the printed URL in the host browser; the login lands in
 `instances/<name>-opencode/` and is reused on later launches. Pick a model with
-`/models`. The end-of-turn gate (`claude-gate`) is Claude Code only and does
-not run under opencode.
+`/models`. The model catalogue (models.dev) is baked into the image from the
+`models-dev` npins pin, so a model that is missing from `/models` means the
+pin is behind: `npins update models-dev` and relaunch. The end-of-turn gate
+(`claude-gate`) is Claude Code only and does not run under opencode.
 
 Each instance gets its own persistent state in `instances/<name>/` (Claude memory, settings)
 and `instances/<name>.json` (Claude session config).

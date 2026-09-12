@@ -119,31 +119,21 @@ write_opencode_config() {
     }' > "$1/opencode.json"
 }
 
-# Decision: opencode's own models.dev fetch is always disabled
-# (OPENCODE_DISABLE_MODELS_FETCH=1) and the catalogue is fetched here on the
-# host instead, handed over as a read-only file (OPENCODE_MODELS_PATH).
-# Observed on lenovo-tablet (2026-09-12): the TUI died at startup with
-# "Failed to fetch models.dev: Refusing to release: lock is compromised
-# (metadata missing)". The forked background refresh in opencode
-# (packages/core/src/models-dev.ts + util/flock.ts) takes a file lock, and
-# a failed release there is an Effect defect that disposes the whole
-# instance; the same code is `orDie` on the network fetch, so no route to
-# models.opencode.ai kills it the same way. With the refresh disabled no
-# lock is taken and no network is needed at startup.
-# When the host fetch fails, opencode falls back to the catalogue that the
-# nixpkgs build embeds in the binary (pkgs.models-dev's _api.json, dated by
-# the nixpkgs pin: 2026-08-31 at the time of writing, which predates
-# gpt-6-astra). Alternative considered: shipping that store file and never
-# fetching. Rejected because nixpkgs master carried the same snapshot, so
-# new models would wait on a pin bump. Returns 0 when the file was fetched.
-fetch_opencode_models() {
-    if curl -fsSL --max-time 20 "https://models.opencode.ai/api.json" -o "$1/models.json"; then
-        return 0
-    fi
-    echo "Warning: could not fetch models.opencode.ai; opencode will use the catalogue embedded in its nix build (may lack recent models)." >&2
-    rm -f "$1/models.json"
-    return 1
-}
+# Decision: opencode's own models.dev fetch is disabled
+# (OPENCODE_DISABLE_MODELS_FETCH=1) and the catalogue is the file nix bakes
+# into the image at /etc/opencode/models.json (OPENCODE_MODELS_PATH), see
+# modelsDev in default.nix. Observed on lenovo-tablet (2026-09-12): the TUI
+# died at startup with "Failed to fetch models.dev: Refusing to release:
+# lock is compromised (metadata missing)". The forked background refresh in
+# opencode (packages/core/src/models-dev.ts + util/flock.ts) takes a file
+# lock, and a failed release there is an Effect defect that disposes the
+# whole instance; the same code is `orDie` on the network fetch, so no
+# route to models.opencode.ai kills it the same way. With the refresh
+# disabled no lock is taken and no network is needed at startup. Both
+# variables are passed on the launcher side rather than baked into the
+# image's environment because nspawn's --setenv list replaces the
+# environment wholesale (same reason as the nix-path note in default.nix).
+OPENCODE_MODELS_ENV=("OPENCODE_DISABLE_MODELS_FETCH=1" "OPENCODE_MODELS_PATH=/etc/opencode/models.json")
 
 NIX_ARGS="./default.nix --arg uid $(id -u) --arg gid $(id -g)"
 
@@ -214,11 +204,9 @@ launch_docker() {
         write_opencode_config "$CONFIG_SNAPSHOT"
         AGENT_MOUNTS+=("-v" "$CONFIG_SNAPSHOT/opencode.json:/home/claude/.config/opencode/opencode.json:ro")
         AGENT_MOUNTS+=("-v" "$OPENCODE_DATA_DIR:/home/claude/.local/share/opencode")
-        AGENT_MOUNTS+=("-e" "OPENCODE_DISABLE_MODELS_FETCH=1")
-        if fetch_opencode_models "$CONFIG_SNAPSHOT"; then
-            AGENT_MOUNTS+=("-v" "$CONFIG_SNAPSHOT/models.json:/home/claude/.config/opencode/models.json:ro")
-            AGENT_MOUNTS+=("-e" "OPENCODE_MODELS_PATH=/home/claude/.config/opencode/models.json")
-        fi
+        for models_var in "${OPENCODE_MODELS_ENV[@]}"; do
+            AGENT_MOUNTS+=("-e" "$models_var")
+        done
     fi
 
     docker run -it \
@@ -362,7 +350,6 @@ launch_nspawn() {
         "$RUNTIME_ROOT/home/claude/.local/share/opencode"
     touch "$RUNTIME_ROOT/home/claude/.claude.json"
     touch "$RUNTIME_ROOT/home/claude/.config/opencode/opencode.json"
-    touch "$RUNTIME_ROOT/home/claude/.config/opencode/models.json"
 
     # Snapshot the read-only config group (CLAUDE.md, skills, character) into a
     # private per-launch copy and mount THOSE, instead of binding the live
@@ -412,11 +399,9 @@ launch_nspawn() {
         AGENT_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/opencode.json:/home/claude/.config/opencode/opencode.json")
         AGENT_BINDS+=("--bind=$OPENCODE_DATA_DIR:/home/claude/.local/share/opencode")
         AGENT_BINDS+=("--chdir=/home/claude")
-        AGENT_BINDS+=("--setenv=OPENCODE_DISABLE_MODELS_FETCH=1")
-        if fetch_opencode_models "$CONFIG_SNAPSHOT"; then
-            AGENT_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/models.json:/home/claude/.config/opencode/models.json")
-            AGENT_BINDS+=("--setenv=OPENCODE_MODELS_PATH=/home/claude/.config/opencode/models.json")
-        fi
+        for models_var in "${OPENCODE_MODELS_ENV[@]}"; do
+            AGENT_BINDS+=("--setenv=$models_var")
+        done
     fi
 
     REDDIT_SETENV=()
