@@ -119,6 +119,28 @@ write_opencode_config() {
     }' > "$1/opencode.json"
 }
 
+# Decision: the models.dev catalogue is fetched here on the host and handed
+# to opencode as a read-only file (OPENCODE_MODELS_PATH) with the in-app
+# fetch disabled (OPENCODE_DISABLE_MODELS_FETCH). Observed on lenovo-tablet
+# (2026-09-12): the TUI died at startup with "Failed to fetch models.dev:
+# Refusing to release: lock is compromised (metadata missing)". opencode's
+# startup populate and its forked background refresh contend for the same
+# file lock (packages/core/src/models-dev.ts + util/flock.ts); a failed
+# release there is an Effect defect and disposes the whole instance. The
+# same populate is also `orDie` on the network fetch, so a container without
+# a route to models.opencode.ai would die the same way. Fetching on the host
+# removes both: no lock is taken, no network is needed at startup. If the
+# host fetch fails the launch still proceeds with opencode's own fetch, but
+# says so. Returns 0 when the file was fetched.
+fetch_opencode_models() {
+    if curl -fsSL --max-time 20 "https://models.opencode.ai/api.json" -o "$1/models.json"; then
+        return 0
+    fi
+    echo "Warning: could not fetch models.opencode.ai; opencode will fetch it itself at startup." >&2
+    rm -f "$1/models.json"
+    return 1
+}
+
 NIX_ARGS="./default.nix --arg uid $(id -u) --arg gid $(id -g)"
 
 # ---------------------------------------------------------------------------
@@ -180,11 +202,19 @@ launch_docker() {
     fi
 
     # Harness-specific mounts: opencode's read-only config and its state dir.
+    # opencode treats its working directory as the project; the docker image's
+    # WorkingDir is already /home/claude (see the nspawn note on why not the
+    # vibes clone).
     AGENT_MOUNTS=()
     if [ "$AGENT" = "opencode" ]; then
         write_opencode_config "$CONFIG_SNAPSHOT"
         AGENT_MOUNTS+=("-v" "$CONFIG_SNAPSHOT/opencode.json:/home/claude/.config/opencode/opencode.json:ro")
         AGENT_MOUNTS+=("-v" "$OPENCODE_DATA_DIR:/home/claude/.local/share/opencode")
+        if fetch_opencode_models "$CONFIG_SNAPSHOT"; then
+            AGENT_MOUNTS+=("-v" "$CONFIG_SNAPSHOT/models.json:/home/claude/.config/opencode/models.json:ro")
+            AGENT_MOUNTS+=("-e" "OPENCODE_MODELS_PATH=/home/claude/.config/opencode/models.json")
+            AGENT_MOUNTS+=("-e" "OPENCODE_DISABLE_MODELS_FETCH=1")
+        fi
     fi
 
     docker run -it \
@@ -328,6 +358,7 @@ launch_nspawn() {
         "$RUNTIME_ROOT/home/claude/.local/share/opencode"
     touch "$RUNTIME_ROOT/home/claude/.claude.json"
     touch "$RUNTIME_ROOT/home/claude/.config/opencode/opencode.json"
+    touch "$RUNTIME_ROOT/home/claude/.config/opencode/models.json"
 
     # Snapshot the read-only config group (CLAUDE.md, skills, character) into a
     # private per-launch copy and mount THOSE, instead of binding the live
@@ -361,11 +392,27 @@ launch_nspawn() {
     # for a localhost callback; nspawn shares the host network namespace
     # here (no --private-network), so opening the URL in the host browser
     # completes the login inside the container.
+    # Decision: opencode gets --chdir=/home/claude; claude keeps nspawn's
+    # default cwd "/" because Claude Code keys its per-project memory on the
+    # cwd and moving it would orphan every instance's memory. opencode treats
+    # the cwd as its project: "/" made it index the container root (seen in
+    # the ryan log as directory=/), and /home/claude/vibes was tried first
+    # but its project scan over the whole clone tree hung a prompt for >90s
+    # in a test. The home dir bootstraps in under a second; opencode logs a
+    # warning that its file picker skips home directories, which is fine.
+    # The agent cds into a repo under ~/vibes itself, or is given one as
+    # `opencode <project>`.
     AGENT_BINDS=()
     if [ "$AGENT" = "opencode" ]; then
         write_opencode_config "$CONFIG_SNAPSHOT"
         AGENT_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/opencode.json:/home/claude/.config/opencode/opencode.json")
         AGENT_BINDS+=("--bind=$OPENCODE_DATA_DIR:/home/claude/.local/share/opencode")
+        AGENT_BINDS+=("--chdir=/home/claude")
+        if fetch_opencode_models "$CONFIG_SNAPSHOT"; then
+            AGENT_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/models.json:/home/claude/.config/opencode/models.json")
+            AGENT_BINDS+=("--setenv=OPENCODE_MODELS_PATH=/home/claude/.config/opencode/models.json")
+            AGENT_BINDS+=("--setenv=OPENCODE_DISABLE_MODELS_FETCH=1")
+        fi
     fi
 
     REDDIT_SETENV=()
