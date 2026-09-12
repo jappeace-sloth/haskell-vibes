@@ -80,6 +80,7 @@ There are predefined scripts for existing instances:
 ./cabal.sh   # Cabal
 ./morag.sh   # Morag
 ./vanilla.sh # Vanilla — unconfigured Claude (no CLAUDE.md, no skills) for comparison
+./ryan.sh    # Andrew Ryan, runs on opencode with an OpenAI model (--agent opencode)
 ```
 
 To start any instance without the project's CLAUDE.md and skills mounted, pass `--vanilla`:
@@ -123,6 +124,7 @@ Linux only — `systemd-nspawn` is part of systemd and has no macOS equivalent.
 | stan    | The second instance. Called in when cabal's busy. |
 | cabal   | Named after the C&C Nod AI. Fiercely loyal, hungry to prove himself. Peace through code. |
 | morag   | Scottish woman. Practical, no-nonsense, dry humour. The one who makes sure CI passes. |
+| ryan    | Andrew Ryan of Rapture. The first non-Anthropic instance: opencode with an OpenAI model. Builders earn respect, parasites get cut out, "would you kindly" is treated as an attack. |
 | vanilla | Unconfigured Claude — no CLAUDE.md, no skills. For showcasing what a stock Claude does vs. a configured one. |
 
 ## WARNING
