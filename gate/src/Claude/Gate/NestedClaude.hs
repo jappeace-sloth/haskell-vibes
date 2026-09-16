@@ -56,11 +56,12 @@ data NestedResult
 runNested :: Reviewer -> Text -> IO NestedResult
 runNested reviewer prompt = do
   baseEnv <- getEnvironment
+  args <- timeoutArgs reviewer
   let configure =
         setStdin (byteStringInput (LazyByteString.fromStrict (encodeUtf8 prompt)))
           . setEnv (guardEnv baseEnv)
           . maybe id setWorkingDir (reviewerWorkdir reviewer)
-      reviewerProcess = configure (proc "timeout" (timeoutArgs reviewer))
+      reviewerProcess = configure (proc "timeout" args)
   outcome <- tryAny (annotateSpawn (nestedSpawnLabel reviewer) (readProcess reviewerProcess))
   pure $ case outcome of
     Left err -> NestedBroken 1 True (Text.pack (displayException err))
@@ -84,8 +85,20 @@ exitNumber :: ExitCode -> Int
 exitNumber ExitSuccess = 0
 exitNumber (ExitFailure n) = n
 
-timeoutArgs :: Reviewer -> [String]
-timeoutArgs reviewer =
+-- | Decision: OpenCode gives the entire gate a dedicated process group and
+-- cancels that group on new input or shutdown. Keep timeout in that group with
+-- --foreground there; its default separate group would orphan the reviewer.
+-- Claude Code retains timeout's usual process-group handling.
+timeoutArgs :: Reviewer -> IO [String]
+timeoutArgs reviewer = do
+  sharedGroup <- (== Just "1") <$> lookupEnv "CLAUDE_GATE_SHARED_PROCESS_GROUP"
+  pure $
+    if sharedGroup
+      then "--foreground" : reviewerArgs reviewer
+      else reviewerArgs reviewer
+
+reviewerArgs :: Reviewer -> [String]
+reviewerArgs reviewer =
   [show (reviewerTimeoutSecs reviewer), "claude", "-p"]
     <> (if reviewerReadOnly reviewer then readOnlyArgs else [])
     <> ["--model", Text.unpack (reviewerModel reviewer)]

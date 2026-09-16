@@ -1,6 +1,6 @@
 # claude-gate
 
-The end-of-turn gate for the vibes Claude Code container, as one Haskell binary.
+The end-of-turn gate for both vibes harnesses, as one Haskell binary.
 
 It replaces the three bash hooks that used to live in `../hooks`
 (`record-edit.sh`, `reset-turn-state.sh`, `stop-gate.sh`). The logic was about
@@ -18,6 +18,12 @@ The binary reads one hook JSON object on stdin and dispatches on its argument.
 | `claude-gate record` | PostToolUse  | Append the edit to the per-turn review stack (filters binaries etc.) |
 | `claude-gate reset`  | UserPromptSubmit | Wipe the previous turn's per-turn state                          |
 | `claude-gate stop-gate` | Stop      | Phase A rule review, then Phase B verification nudge                 |
+
+`../opencode/stopgate.js` adapts OpenCode's prompt, edit, and idle events to the
+same protocol. Its `ApplyPatch` records carry the tool's per-file unified diff,
+including deletions, rather than requiring the file to still exist. Gate blocks
+resume the OpenCode session with synthetic feedback, preserving phase counters
+and the original user-turn boundary. The nested reviewers still use Claude Code.
 
 ## Phases of the Stop gate
 
@@ -43,8 +49,12 @@ Disable rule review with `CLAUDE_SKIP_RULE_CHECK=1`, verification with
 ## Build and test
 
 ```
-nix-build nix/ci.nix    # builds the binary, runs the tests, runs hlint
+nix-build nix/ci.nix    # builds the binary, tests both harness adapters, runs hlint
 ```
+
+The optional live SDK smoke test starts OpenCode with a temporary home, local
+provider fixture, and mock gate (no model credentials): from the repository root,
+run `nix-shell -p nodejs opencode --run 'node --test opencode/test/server-smoke.js'`.
 
 The container builds this via `callCabal2nix ./gate` in the top-level
 `../default.nix`, so the binary ships on `PATH` inside the image.

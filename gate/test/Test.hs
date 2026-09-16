@@ -353,6 +353,12 @@ editRoundTripTests =
         edit <- parsedEdit "Write" "{\"file_path\":\"a.txt\",\"content\":\"hello body\"}"
         reloaded <- reencode edit
         assertBool "content under --- new content ---" (Text.isInfixOf "--- new content ---\nhello body" (renderDiffs [reloaded]))
+    , testCase "an OpenCode patch round-trips and retains removed and added lines" $ do
+        edit <- parsedEdit "ApplyPatch" "{\"file_path\":\"src/Foo.hs\",\"patch\":\"@@ -1 +1 @@\\n-old line\\n+new line\\n\"}"
+        reloaded <- reencode edit
+        editFilePath reloaded @?= "src/Foo.hs"
+        assertBool "the exact applied diff reaches the reviewer"
+          (Text.isInfixOf "@@ -1 +1 @@\n-old line\n+new line\n" (renderDiffs [reloaded]))
     ]
 
 supersedeTests :: TestTree

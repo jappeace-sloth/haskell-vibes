@@ -16,6 +16,15 @@ in
   # The cabal build / library / executable / test derivation.
   native = import ../default.nix { inherit hpkgs; };
 
+  opencode = pkgs.runCommand "ci-opencode-stopgate"
+    {
+      nativeBuildInputs = [ pkgs.nodejs ];
+      CLAUDE_GATE_TEST_BINARY = "${hpkgs.claude-gate}/bin/claude-gate";
+    } ''
+    node --test ${../../opencode}/test/*.test.js
+    touch $out
+  '';
+
   # Enforce .hlint.yaml across app/src/test as part of CI, pinned to the same
   # nixpkgs as the rest of the toolchain.
   hlint = pkgs.runCommand "ci-hlint"

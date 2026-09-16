@@ -40,9 +40,8 @@ done
 # per harness. Rejected: the nspawn/docker plumbing is the bulk of the file
 # and would drift. Only the final command, opencode's config file and its
 # state directory differ. `codex` (the OpenAI CLI) is not wired: Jappie
-# prefers opencode for the experiment, and the claude-gate hooks are not
-# ported to any non-Claude harness yet, so opencode runs without the Stop
-# gate.
+# prefers opencode for the experiment. Its plugin adapts the same claude-gate
+# protocol to OpenCode events (including ChatGPT workers).
 case "$AGENT" in
     claude|opencode) ;;
     *) echo "Error: unknown agent '$AGENT' (expected claude or opencode)"; exit 1 ;;
@@ -111,6 +110,7 @@ write_opencode_config() {
         "$schema": "https://opencode.ai/config.json",
         autoupdate: false,
         permission: "allow",
+        plugin: ["file:///etc/opencode/stopgate.js"],
         mcp: ($mcp | with_entries(.value = {
             type: "local",
             command: ([.value.command] + .value.args),

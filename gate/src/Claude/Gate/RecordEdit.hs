@@ -15,16 +15,17 @@ import Data.ByteString qualified as ByteString
 import Data.ByteString.Lazy qualified as LazyByteString
 import Data.List (isInfixOf, isSuffixOf)
 import Data.Text (Text)
-import Claude.Gate.Edit (Edit, editFilePath, parseEditFromTool)
+import Data.Text.Encoding (encodeUtf8)
+import Claude.Gate.Edit (Edit (AppliedPatch), editFilePath, parseEditFromTool)
 import Claude.Gate.HookProtocol (HookEvent (sessionId, toolInput, toolName), readHookEvent)
 import Claude.Gate.TurnState (TurnPaths (reviewStack), ensureStateDir, turnPaths)
 import System.Directory (doesFileExist, getFileSize)
 import System.Environment (lookupEnv)
 
--- | The tools whose edits we record. Matches the PostToolUse matcher in
--- settings.json; any other tool name is simply not an edit event.
+-- | The Claude Code PostToolUse matcher plus OpenCode's applied-patch adapter.
+-- Any other tool name is simply not an edit event.
 editTools :: [Text]
-editTools = ["Edit", "MultiEdit", "Write", "NotebookEdit"]
+editTools = ["Edit", "MultiEdit", "Write", "NotebookEdit", "ApplyPatch"]
 
 -- | Files larger than this are skipped so a huge generated write does not burn
 -- review tokens. Matches the 50 KB cutoff the shell hook used.
@@ -92,14 +93,25 @@ recordIfRelevant session edit = case pathSkipReason path of
   Just SkipBinaryExtension -> pure ()
   Just SkipArchive -> pure ()
   Just SkipBuildArtifact -> pure ()
-  Nothing -> do
-    isRegularFile <- doesFileExist path
-    when isRegularFile $ do
-      tooBig <- aboveSizeLimit path
-      binary <- looksBinary path
-      when (not tooBig && not binary) (appendEdit session edit)
+  Nothing -> recordTextEdit session edit
   where
     path = editFilePath edit
+
+-- | OpenCode supplies the applied unified diff, including deletions whose file
+-- no longer exists. Filter that payload instead of requiring a surviving file.
+-- Decision: preserve the tool's diff rather than reread full file contents, so
+-- deletes, moves, and the exact changed lines survive the harness translation.
+recordTextEdit :: Text -> Edit -> IO ()
+recordTextEdit session edit@(AppliedPatch _ patch) = do
+  let bytes = encodeUtf8 patch
+  when (toInteger (ByteString.length bytes) <= maxRecordedFileBytes && not (ByteString.elem 0 bytes))
+    (appendEdit session edit)
+recordTextEdit session edit = do
+  isRegularFile <- doesFileExist (editFilePath edit)
+  when isRegularFile $ do
+    tooBig <- aboveSizeLimit (editFilePath edit)
+    binary <- looksBinary (editFilePath edit)
+    when (not tooBig && not binary) (appendEdit session edit)
 
 aboveSizeLimit :: FilePath -> IO Bool
 aboveSizeLimit path = (> maxRecordedFileBytes) <$> getFileSize path
