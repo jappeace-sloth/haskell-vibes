@@ -4,11 +4,12 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { pathToFileURL } from "node:url";
 
 async function providerFixture(request, response) {
   for await (const chunk of request) { void chunk; }
@@ -37,6 +38,9 @@ test("OpenCode loads the plugin and actually resumes a rejected completed turn",
   let server;
   let output = "";
   try {
+    // Match the installed image: only the .ts plugin, no node_modules beside it.
+    const plugin = join(temporary, "stopgate.ts");
+    await copyFile(new URL("../stopgate.ts", import.meta.url), plugin);
     await writeFile(join(temporary, "calls"), "");
     await writeFile(join(temporary, "claude-gate"), `#!${process.execPath}
 const fs = require('node:fs');
@@ -52,7 +56,7 @@ else {
 `, { mode: 0o755 });
     const config = {
       "$schema": "https://opencode.ai/config.json",
-      plugin: [new URL("../stopgate.js", import.meta.url).href],
+      plugin: [pathToFileURL(plugin).href],
       model: "fixture/fixture", small_model: "fixture/fixture", autoupdate: false,
       permission: "allow",
       provider: { fixture: {

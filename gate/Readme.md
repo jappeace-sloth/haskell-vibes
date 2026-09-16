@@ -19,7 +19,7 @@ The binary reads one hook JSON object on stdin and dispatches on its argument.
 | `claude-gate reset`  | UserPromptSubmit | Wipe the previous turn's per-turn state                          |
 | `claude-gate stop-gate` | Stop      | Phase A rule review, then Phase B verification nudge                 |
 
-`../opencode/stopgate.js` adapts OpenCode's prompt, edit, and idle events to the
+`../opencode/stopgate.ts` adapts OpenCode's prompt, edit, and idle events to the
 same protocol. Its `ApplyPatch` records carry the tool's per-file unified diff,
 including deletions, rather than requiring the file to still exist. Gate blocks
 resume the OpenCode session with synthetic feedback, preserving phase counters
@@ -49,8 +49,14 @@ Disable rule review with `CLAUDE_SKIP_RULE_CHECK=1`, verification with
 ## Build and test
 
 ```
-nix-build nix/ci.nix    # builds the binary, tests both harness adapters, runs hlint
+nix-build nix/ci.nix    # builds the binary, typechecks/tests the adapter, runs hlint
 ```
+
+The adapter is strict TypeScript checked against the published OpenCode plugin
+and SDK types. Their versions match the image's OpenCode version; update the
+devDependencies in `../opencode/package.json` and regenerate `package-lock.json`
+when bumping it. Nix imports those locked dependencies for typechecking. The
+installed plugin uses type-only imports, so it needs no extra runtime packages.
 
 The optional live SDK smoke test starts OpenCode with a temporary home, local
 provider fixture, and mock gate (no model credentials): from the repository root,

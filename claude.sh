@@ -110,7 +110,7 @@ write_opencode_config() {
         "$schema": "https://opencode.ai/config.json",
         autoupdate: false,
         permission: "allow",
-        plugin: ["file:///etc/opencode/stopgate.js"],
+        plugin: ["file:///etc/opencode/stopgate.ts"],
         mcp: ($mcp | with_entries(.value = {
             type: "local",
             command: ([.value.command] + .value.args),

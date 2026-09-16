@@ -2,9 +2,64 @@ import { spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import type { Hooks, Plugin, PluginInput } from "@opencode-ai/plugin";
+import type { Part, SessionMessagesResponses, SessionPromptAsyncData, UserMessage } from "@opencode-ai/sdk";
+import type { SessionPromptAsyncData as PromptAsyncV2, UserMessage as UserMessageV2 } from "@opencode-ai/sdk/v2";
 
-/** Run the existing hook protocol without a shell or npm dependencies. */
-function runGate(command, payload, directory, signal) {
+type GateCommand = "reset" | "record" | "stop-gate";
+type GateVerdict =
+  | { decision: "block"; reason: string; systemMessage?: string }
+  | { decision?: undefined; systemMessage?: string };
+type RecordedEdit =
+  | { tool_name: "Edit"; tool_input: { file_path: string; old_string: string; new_string: string } }
+  | { tool_name: "Write"; tool_input: { file_path: string; content: string } }
+  | { tool_name: "ApplyPatch"; tool_input: { file_path: string; patch: string } };
+type GatePayload = { session_id: string } & (RecordedEdit | { transcript_path?: string });
+type Client = PluginInput["client"];
+type Messages = SessionMessagesResponses[200];
+type ToolAfter = NonNullable<Hooks["tool.execute.after"]>;
+
+// The plugin exposes the v1 client, but current messages store the reasoning
+// variant inside model and prompt requests take it at the top level. Use the
+// published v2 field types while retaining the supplied v1 client methods.
+type SessionUser = UserMessage & Pick<UserMessageV2, "model">;
+type ContinuationBody = NonNullable<SessionPromptAsyncData["body"]> & Pick<NonNullable<PromptAsyncV2["body"]>, "variant">;
+
+interface SessionState {
+  pending: Promise<void>;
+  revision: number;
+  checked?: string;
+  controller?: AbortController;
+  turnID?: string;
+  closing: boolean;
+}
+
+interface Delivery {
+  sessionID: string;
+  lastUser: SessionUser;
+  verdict: GateVerdict;
+  revision: number;
+  assistantID: string;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Tool argument and metadata payloads are untyped in the upstream hook API. */
+function requiredString(payload: unknown, field: string): string {
+  if (!isRecord(payload) || typeof payload[field] !== "string") {
+    throw new Error(`OpenCode omitted the string field ${field}. Check the stopgate adapter against the installed OpenCode version.`);
+  }
+  return payload[field];
+}
+
+/** Run the existing hook protocol without a shell or runtime package imports. */
+function runGate(command: GateCommand, payload: GatePayload, directory: string, signal?: AbortSignal): Promise<GateVerdict | undefined> {
   return new Promise((accept, reject) => {
     const child = spawn("claude-gate", [command], {
       cwd: directory,
@@ -14,15 +69,15 @@ function runGate(command, payload, directory, signal) {
     });
     let stdout = "";
     let stderr = "";
-    let failure;
-    let escalation;
-    const terminate = (signalName) => {
+    let failure: Error | undefined;
+    let escalation: ReturnType<typeof setTimeout> | undefined;
+    const terminate = (signalName: NodeJS.Signals): void => {
       if (!child.pid) return;
       try {
         process.kill(-child.pid, signalName);
       } catch (error) {
         // ESRCH means the process group already exited during cancellation.
-        if (error.code !== "ESRCH") reject(error);
+        if (!isRecord(error) || error.code !== "ESRCH") reject(error);
       }
     };
     const abort = () => {
@@ -50,7 +105,7 @@ function runGate(command, payload, directory, signal) {
       try {
         accept(parseVerdict(stdout));
       } catch (error) {
-        reject(new Error(`claude-gate ${command} returned invalid JSON: ${error.message}`));
+        reject(new Error(`claude-gate ${command} returned invalid JSON: ${errorMessage(error)}`));
       }
     });
     signal?.addEventListener("abort", abort, { once: true });
@@ -60,33 +115,42 @@ function runGate(command, payload, directory, signal) {
 }
 
 /** Empty output is the hook's success protocol; other output must be an object. */
-function parseVerdict(stdout) {
-  const verdict = stdout.trim() ? JSON.parse(stdout) : {};
-  if (!verdict || typeof verdict !== "object" || Array.isArray(verdict)
+function parseVerdict(stdout: string): GateVerdict {
+  const verdict: unknown = stdout.trim() ? JSON.parse(stdout) : {};
+  if (!isRecord(verdict)
     || Object.keys(verdict).some((key) => !["decision", "reason", "systemMessage"].includes(key))
     || (verdict.systemMessage !== undefined && typeof verdict.systemMessage !== "string")) {
     throw new Error("expected an object containing decision/reason/systemMessage");
   }
-  return verdict;
+  const systemMessage = verdict.systemMessage;
+  if (verdict.decision === undefined) return { systemMessage };
+  if (verdict.decision !== "block") {
+    throw new Error(`claude-gate returned an unknown decision: ${verdict.decision}. Check the gate's JSON protocol.`);
+  }
+  if (typeof verdict.reason !== "string" || !verdict.reason.trim()) {
+    throw new Error("claude-gate blocked without a reason. Check the gate's JSON protocol.");
+  }
+  return { decision: "block", reason: verdict.reason, systemMessage };
 }
 
 /** Serialize hooks per root session, without sharing mutable state globally. */
-function sessionState(sessions, sessionID) {
-  if (!sessions.has(sessionID)) {
-    sessions.set(sessionID, { pending: Promise.resolve(), revision: 0, checked: undefined, controller: undefined, turnID: undefined, closing: false });
-  }
-  return sessions.get(sessionID);
+function sessionState(sessions: Map<string, SessionState>, sessionID: string): SessionState {
+  const existing = sessions.get(sessionID);
+  if (existing) return existing;
+  const created: SessionState = { pending: Promise.resolve(), revision: 0, closing: false };
+  sessions.set(sessionID, created);
+  return created;
 }
 
 /** A failed hook is reported to its caller; subsequent prompts can still reset. */
-function enqueue(state, action) {
+function enqueue(state: SessionState, action: () => Promise<void>): Promise<void> {
   const pending = state.pending.then(action);
   state.pending = pending.then(() => undefined, () => undefined);
   return pending;
 }
 
 /** Reset and record must also be cancellable when OpenCode shuts down. */
-async function runSessionGate(context, state, command, payload) {
+async function runSessionGate(context: PluginInput, state: SessionState, command: GateCommand, payload: GatePayload): Promise<void> {
   if (state.closing) return;
   state.controller = new AbortController();
   try {
@@ -97,45 +161,54 @@ async function runSessionGate(context, state, command, payload) {
 }
 
 /** Resolve subagent edits to the parent's turn instead of reviewing them twice. */
-async function rootSession(client, sessionID) {
+async function rootSession(client: Client, sessionID: string): Promise<string> {
   const response = await client.session.get({ path: { id: sessionID }, throwOnError: true });
   return response.data.parentID ? rootSession(client, response.data.parentID) : sessionID;
 }
 
 /** Only genuine user input resets a turn, never gate or compaction continuations. */
-function realPrompt(parts) {
-  return parts.some((part) => !part.synthetic && ["text", "file", "agent", "subtask"].includes(part.type));
+function realPrompt(parts: Part[]): boolean {
+  return parts.some((part) => {
+    switch (part.type) {
+      case "text": return !part.synthetic;
+      case "file": case "agent": case "subtask": return true;
+      default: return false;
+    }
+  });
 }
 
 /** Translate completed OpenCode edit tools into the shared hook protocol. */
-function recordedEdits(input, output, directory) {
+function recordedEdits(input: Parameters<ToolAfter>[0], output: Parameters<ToolAfter>[1], directory: string): RecordedEdit[] {
   switch (input.tool) {
     case "edit":
       return [{ tool_name: "Edit", tool_input: {
-        file_path: resolve(directory, input.args.filePath),
-        old_string: input.args.oldString, new_string: input.args.newString,
+        file_path: resolve(directory, requiredString(input.args, "filePath")),
+        old_string: requiredString(input.args, "oldString"), new_string: requiredString(input.args, "newString"),
       } }];
     case "write":
       return [{ tool_name: "Write", tool_input: {
-        file_path: resolve(directory, input.args.filePath), content: input.args.content,
+        file_path: resolve(directory, requiredString(input.args, "filePath")), content: requiredString(input.args, "content"),
       } }];
-    case "apply_patch":
-      if (!Array.isArray(output.metadata?.files) || output.metadata.files.length === 0) {
+    case "apply_patch": {
+      const metadata: unknown = output.metadata;
+      if (!isRecord(metadata) || !Array.isArray(metadata.files) || metadata.files.length === 0) {
         throw new Error("OpenCode apply_patch returned no file diffs. Check the stopgate adapter against the installed OpenCode version.");
       }
-      return output.metadata.files.map((file) => {
-        if (typeof file.patch !== "string") throw new Error(`OpenCode omitted the applied diff for ${file.filePath}. Update the stopgate adapter.`);
+      return metadata.files.map((file: unknown): RecordedEdit => {
+        const path = isRecord(file) && file.movePath !== undefined
+          ? requiredString(file, "movePath") : requiredString(file, "filePath");
         return { tool_name: "ApplyPatch", tool_input: {
-          file_path: resolve(directory, file.movePath ?? file.filePath), patch: file.patch,
+          file_path: resolve(directory, path), patch: requiredString(file, "patch"),
         } };
       });
+    }
     default:
       return [];
   }
 }
 
 /** Export claims in the gate's transcript format, retaining the real turn boundary. */
-function transcript(messages, turnID) {
+function transcript(messages: Messages, turnID?: string): string {
   const boundary = turnID
     ? messages.findIndex(({ info }) => info.id === turnID)
     : messages.findLastIndex(({ info, parts }) => info.role === "user" && realPrompt(parts));
@@ -147,9 +220,8 @@ function transcript(messages, turnID) {
 }
 
 /** Run the gate with an already-flushed snapshot, cleaned up even on cancellation. */
-async function checkTurn(context, state, sessionID, messages) {
+async function checkTurn(context: PluginInput, state: SessionState, sessionID: string, messages: Messages, signal: AbortSignal): Promise<GateVerdict | undefined> {
   const turnID = state.turnID;
-  const signal = state.controller.signal;
   const temporary = await mkdtemp(join(tmpdir(), "opencode-stopgate-"));
   try {
     if (signal.aborted) return undefined;
@@ -162,7 +234,7 @@ async function checkTurn(context, state, sessionID, messages) {
 }
 
 /** Both the model and human receive the shared gate's verdict. */
-async function deliverVerdict(context, state, delivery) {
+async function deliverVerdict(context: PluginInput, state: SessionState, delivery: Delivery): Promise<void> {
   const { client } = context;
   const { sessionID, lastUser, verdict, revision, assistantID } = delivery;
   if (verdict.systemMessage) {
@@ -174,35 +246,33 @@ async function deliverVerdict(context, state, delivery) {
   }
   if (state.closing || revision !== state.revision) return;
   if (verdict.decision === "block") {
-    if (typeof verdict.reason !== "string" || !verdict.reason.trim()) throw new Error("claude-gate blocked without a reason. Check the gate's JSON protocol.");
+    const body: ContinuationBody = {
+      agent: lastUser.agent, model: lastUser.model, variant: lastUser.model.variant,
+      parts: [{ type: "text", text: verdict.reason, synthetic: true, metadata: { stopgateSource: assistantID } }],
+    };
     await client.session.promptAsync({
       path: { id: sessionID },
-      body: {
-        agent: lastUser.agent, model: lastUser.model, variant: lastUser.variant,
-        parts: [{ type: "text", text: verdict.reason, synthetic: true, metadata: { stopgateSource: assistantID } }],
-      },
+      body,
       throwOnError: true,
     });
     await confirmContinuation(context, state, delivery);
-  } else if (verdict.decision !== undefined) {
-    throw new Error(`claude-gate returned an unknown decision: ${verdict.decision}. Check the gate's JSON protocol.`);
   }
 }
 
 /** promptAsync acknowledges before saving; do not confuse acceptance with delivery. */
-async function confirmContinuation(context, state, delivery) {
+async function confirmContinuation(context: PluginInput, state: SessionState, delivery: Delivery): Promise<void> {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     if (state.closing || state.revision !== delivery.revision) return;
     const response = await context.client.session.messages({ path: { id: delivery.sessionID }, throwOnError: true });
     if (response.data.some(({ info, parts }) => info.role === "user"
-      && parts.some((part) => part.metadata?.stopgateSource === delivery.assistantID))) return;
+      && parts.some((part) => part.type === "text" && part.metadata?.stopgateSource === delivery.assistantID))) return;
     await new Promise((accept) => setTimeout(accept, 100));
   }
   throw new Error("OpenCode accepted the gate feedback but did not save it within five seconds. Check session.error in the OpenCode log before retrying.");
 }
 
 /** Aborted, failed, unfinished, and already-checked messages are not fresh Stops. */
-async function onIdle(context, state, sessionID, revision) {
+async function onIdle(context: PluginInput, state: SessionState, sessionID: string, revision: number): Promise<void> {
   if (state.closing || revision !== state.revision) return;
   const response = await context.client.session.messages({ path: { id: sessionID }, throwOnError: true });
   if (state.closing || revision !== state.revision) return;
@@ -211,10 +281,10 @@ async function onIdle(context, state, sessionID, revision) {
   if (!latest || latest.role !== "assistant" || latest.error || !latest.time.completed) return;
   if (!latest.finish || ["tool-calls", "unknown"].includes(latest.finish) || latest.id === state.checked) return;
   const lastUser = messages.findLast(({ info }) => info.role === "user")?.info;
-  if (!lastUser) throw new Error("OpenCode completed a turn without a user message. Check the session transcript before retrying.");
+  if (!lastUser || lastUser.role !== "user") throw new Error("OpenCode completed a turn without a user message. Check the session transcript before retrying.");
   state.controller = new AbortController();
   try {
-    const verdict = await checkTurn(context, state, sessionID, messages);
+    const verdict = await checkTurn(context, state, sessionID, messages, state.controller.signal);
     if (verdict && revision === state.revision && !state.closing) {
       await deliverVerdict(context, state, { sessionID, lastUser, verdict, revision, assistantID: latest.id });
       state.checked = latest.id;
@@ -225,8 +295,8 @@ async function onIdle(context, state, sessionID, revision) {
 }
 
 /** OpenCode does not await event hooks, so report rejected work explicitly. */
-async function reportFailure(client, error) {
-  const message = `Stopgate did not check this turn: ${error.message}. Check the OpenCode log and claude-gate installation; for reviewer login failures, run claude once in this instance.`;
+async function reportFailure(client: Client, error: unknown): Promise<void> {
+  const message = `Stopgate did not check this turn: ${errorMessage(error)}. Check the OpenCode log and claude-gate installation; for reviewer login failures, run claude once in this instance.`;
   const reports = await Promise.allSettled([
     client.app.log({ body: { service: "stopgate", level: "error", message }, throwOnError: true }),
     client.tui.showToast({ body: { title: "Stopgate failed", message, variant: "error", duration: 20000 }, throwOnError: true }),
@@ -237,11 +307,11 @@ async function reportFailure(client, error) {
 }
 
 // Decision: adapt OpenCode's idle event to the existing gate binary instead of
-// duplicating review policy in JS. OpenCode 1.18.30 has no blocking Stop hook;
+// duplicating review policy in TypeScript. OpenCode 1.18.30 has no blocking Stop hook;
 // promptAsync resumes a rejected turn using the same agent/model. Gate prompts
 // are synthetic, so they neither reset phase counters nor erase earlier claims.
-export default async function Stopgate(context) {
-  const sessions = new Map();
+const Stopgate: Plugin = async (context) => {
+  const sessions = new Map<string, SessionState>();
   let closing = false;
   return {
     "chat.message": async (input, output) => {
@@ -288,4 +358,6 @@ export default async function Stopgate(context) {
       await Promise.all([...sessions.values()].map((state) => state.pending));
     },
   };
-}
+};
+
+export default Stopgate;

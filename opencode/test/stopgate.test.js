@@ -3,7 +3,7 @@ import { beforeEach, test } from "node:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import Stopgate from "../stopgate.js";
+import Stopgate from "../stopgate.ts";
 
 // Exercise the exported plugin hooks and real child-process boundary. Only the
 // gate executable and OpenCode SDK are fixtures; policy is tested in gate/test.
@@ -21,7 +21,7 @@ else process.stdout.write(JSON.stringify(verdict));
 `;
 
 function user(id = "user-1", synthetic = false) {
-  return { info: { id, role: "user", agent: "build", model: { providerID: "openai", modelID: "gpt-6-astra" } }, parts: [{ type: "text", text: "Please fix it", synthetic }] };
+  return { info: { id, role: "user", agent: "build", model: { providerID: "openai", modelID: "gpt-6-astra", variant: "high" } }, parts: [{ type: "text", text: "Please fix it", synthetic }] };
 }
 
 function assistant(id = "assistant-1") {
@@ -79,6 +79,7 @@ test("ChatGPT rejection resumes the same agent/model without resetting the turn"
   await idle();
   assert.equal(prompts.length, 1);
   assert.deepEqual(prompts[0].body.model, user().info.model);
+  assert.equal(prompts[0].body.variant, "high");
   assert.equal(prompts[0].body.agent, "build");
   assert.equal(prompts[0].body.parts[0].text, "Fix the failing test");
   assert.deepEqual((await calls()).map((call) => call.command), ["reset", "stop-gate"]);
@@ -178,6 +179,17 @@ for (const failure of [{ crash: true }, { malformed: true }, { decision: "block"
 test("missing patch metadata fails rather than quietly omitting the edit", async (context) => {
   const { hooks } = context.fixture;
   await assert.rejects(hooks["tool.execute.after"]({ tool: "apply_patch", sessionID: "root", args: {} }, {}), /no file diffs/);
+});
+
+test("untyped SDK tool payloads are validated before recording", async (context) => {
+  const { hooks, calls } = context.fixture;
+  await assert.rejects(hooks["tool.execute.after"]({
+    tool: "write", sessionID: "root", args: { filePath: "a.hs", content: null },
+  }, {}), /string field content/);
+  await assert.rejects(hooks["tool.execute.after"]({
+    tool: "apply_patch", sessionID: "root", args: {},
+  }, { metadata: { files: [{ filePath: "a.hs", patch: false }] } }), /string field patch/);
+  assert.deepEqual(await calls(), []);
 });
 
 test("compaction replay does not discard claims from the original prompt", async (context) => {
