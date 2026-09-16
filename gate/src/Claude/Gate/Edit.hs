@@ -1,10 +1,9 @@
 -- | A single file mutation recorded during a turn.
 --
--- The PostToolUse hook only fires for the four edit tools (the matcher in
--- settings.json is @Write|Edit|MultiEdit|NotebookEdit@), so those four
--- constructors are the complete set: there is no "unknown tool" case to fall
--- back on. Each edit is persisted as one JSON line on the review stack and read
--- back at Stop time to reconstruct the diff for the reviewer.
+-- Claude Code records @Write|Edit|MultiEdit|NotebookEdit@. The OpenCode adapter
+-- also records @ApplyPatch@ with a per-file unified diff. Each edit is persisted
+-- as one JSON line on the review stack and read back at Stop time to reconstruct
+-- the diff for the reviewer.
 module Claude.Gate.Edit
   ( Edit(..)
   , Replacement(..)
@@ -36,6 +35,7 @@ data Edit
   | MultiEditFile FilePath [Replacement]
   | WriteFileContent FilePath Text
   | NotebookCellSource FilePath Text
+  | AppliedPatch FilePath Text
   deriving stock (Eq, Show)
 
 editFilePath :: Edit -> FilePath
@@ -44,6 +44,7 @@ editFilePath = \case
   MultiEditFile path _ -> path
   WriteFileContent path _ -> path
   NotebookCellSource path _ -> path
+  AppliedPatch path _ -> path
 
 -- | Parse an edit from a PostToolUse payload's tool name and tool_input. The
 -- tool name selects the shape; an unexpected name means the settings.json
@@ -62,6 +63,8 @@ editParser tool = withObject "tool_input" $ \object' -> case tool of
     WriteFileContent <$> object' .: "file_path" <*> object' .: "content"
   "NotebookEdit" ->
     NotebookCellSource <$> object' .: "file_path" <*> object' .: "new_source"
+  "ApplyPatch" ->
+    AppliedPatch <$> object' .: "file_path" <*> object' .: "patch"
   other ->
     fail ("unexpected edit tool: " <> show other)
 
@@ -79,6 +82,8 @@ instance ToJSON Edit where
       object ["tool" .= ("Write" :: Text), "file_path" .= path, "content" .= content]
     NotebookCellSource path source ->
       object ["tool" .= ("NotebookEdit" :: Text), "file_path" .= path, "new_source" .= source]
+    AppliedPatch path patch ->
+      object ["tool" .= ("ApplyPatch" :: Text), "file_path" .= path, "patch" .= patch]
 
 replacementToJSON :: Replacement -> Value
 replacementToJSON (Replacement old new) =

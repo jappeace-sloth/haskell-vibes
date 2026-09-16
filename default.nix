@@ -147,6 +147,7 @@ let
       mcpHoogle
       claudeGate
       opencodeModels
+      (pkgs.writeTextDir "etc/opencode/stopgate.ts" (builtins.readFile ./opencode/stopgate.ts))
       (pkgs.writeTextDir "etc/image-manifest" ''
         mcp-hoogle-rev: ${builtins.substring 0 7 sources.mcp-hoogle.revision}
         models-dev-rev: ${builtins.substring 0 7 sources.models-dev.revision}

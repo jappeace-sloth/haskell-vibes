@@ -68,6 +68,7 @@ isFullContent edit = case edit of
   NotebookCellSource _ _ -> True
   SingleEdit _ _ -> False
   MultiEditFile _ _ -> False
+  AppliedPatch _ _ -> False
 
 renderOne :: Edit -> Text
 renderOne edit =
@@ -83,6 +84,7 @@ editPath = \case
   MultiEditFile path _ -> path
   WriteFileContent path _ -> path
   NotebookCellSource path _ -> path
+  AppliedPatch path _ -> path
 
 toolLabel :: Edit -> Text
 toolLabel = \case
@@ -90,6 +92,7 @@ toolLabel = \case
   MultiEditFile _ _ -> "MultiEdit"
   WriteFileContent _ _ -> "Write"
   NotebookCellSource _ _ -> "NotebookEdit"
+  AppliedPatch _ _ -> "ApplyPatch"
 
 editBody :: Edit -> Text
 editBody = \case
@@ -97,6 +100,7 @@ editBody = \case
   MultiEditFile _ replacements -> Text.intercalate "\n" (map renderReplacement replacements)
   WriteFileContent _ content -> "--- new content ---\n" <> content
   NotebookCellSource _ source -> "--- new source ---\n" <> source
+  AppliedPatch _ patch -> "--- applied diff (+ lines are new content) ---\n" <> patch
 
 renderReplacement :: Replacement -> Text
 renderReplacement (Replacement old new) =
