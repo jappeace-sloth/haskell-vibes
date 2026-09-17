@@ -105,11 +105,14 @@ echo "$UPDATED_JSON" > "$INSTANCE_JSON"
 # state dir. autoupdate is off because the binary comes from nix. The file
 # is written into the per-launch config snapshot and bind-mounted read-only
 # like CLAUDE.md, so the agent cannot widen its own permissions.
+# Decision: append the standing parallel-work request through an instruction
+# file. Replacing agent.prompt would discard OpenCode's bundled model guidance.
 write_opencode_config() {
     jq -n --argjson mcp "$MCP_CONFIG" '{
         "$schema": "https://opencode.ai/config.json",
         autoupdate: false,
         permission: "allow",
+        instructions: ["/etc/opencode/parallel-agents.md"],
         plugin: ["file:///etc/opencode/stopgate.ts"],
         mcp: ($mcp | with_entries(.value = {
             type: "local",
