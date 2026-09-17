@@ -23,8 +23,7 @@ The binary reads one hook JSON object on stdin and dispatches on its argument.
 same protocol. Its `ApplyPatch` records carry the tool's per-file unified diff,
 including deletions, rather than requiring the file to still exist. Gate blocks
 resume the OpenCode session with synthetic feedback, preserving phase counters
-and the original user-turn boundary. The adapter selects OpenCode reviewers,
-using the worker's provider/model and reasoning variant. GPT workers are reviewed
+and the original user-turn boundary. The adapter selects OpenCode reviewers
 through the same OpenCode/ChatGPT login; no Claude login is needed.
 
 ## Reviewer backends
@@ -42,11 +41,24 @@ set `OPENCODE_GATE_REVIEWER=1`, which disables the adapter's hooks to prevent
 recursive reviews. The canary and rule reviewer have read-only tools; the critic
 can run tests. Reviewers cannot delegate to differently configured subagents.
 
+For OpenAI workers, the default models are:
+
+| Phase | Model |
+| --- | --- |
+| Complexity canary | `openai/gpt-5.6-terra-fast` |
+| Adversarial critique | The worker's model and reasoning variant |
+| Rule review | `openai/gpt-5.6-luna` |
+
+These choices were tested through the instance's ChatGPT login. Catalogue
+presence alone is insufficient: the listed GPT-5.4-mini, GPT-5.3-Codex-Spark,
+and GPT-5.4 models were rejected as unsupported by that endpoint. The catalogue
+does not expose relative model sizes or subscription-cap weighting.
+
+Other providers inherit their worker model for all three phases.
 Optional per-phase model overrides are `OPENCODE_DUMBIFY_MODEL`,
 `OPENCODE_CRITIQUE_MODEL`, and `OPENCODE_REVIEWER_MODEL`, all using `provider/model`
-names. They default to the worker model, so a ChatGPT account is not required to
-provide any particular cheaper model. Select a smaller available GPT model for
-`OPENCODE_DUMBIFY_MODEL` to use a cheaper complexity canary. A different model
+names. Use these overrides if an account does not offer the default GPT tiers.
+Unavailable models fail visibly rather than silently switching to Astra. A different model
 does not inherit the worker's reasoning variant, which it might not support.
 The existing `CLAUDE_*_MODEL` overrides apply only to Claude Code reviewers.
 

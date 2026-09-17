@@ -113,8 +113,9 @@ The response can therefore appear before its review completes. A new user prompt
 cancels an outstanding review. Escape after generation has already finished does
 not cancel this external review; quitting OpenCode does.
 
-OpenCode reviewers run through `opencode run` using the worker's selected GPT
-model and reasoning setting, authenticated by the same OpenCode/ChatGPT login.
+OpenCode reviewers run through `opencode run`, authenticated by the same
+OpenCode/ChatGPT login. For OpenAI workers, dumbify uses GPT-5.6 Terra Fast, rule
+review uses GPT-5.6 Luna, and critique inherits the worker's model and reasoning setting.
 The canary and rule reviewer have read-only tools; the critic can run tests.
 Separate reviewer sessions disable their own gate hooks to prevent recursion.
 Optional per-phase OpenCode model overrides are documented in
