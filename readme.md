@@ -113,12 +113,15 @@ The response can therefore appear before its review completes. A new user prompt
 cancels an outstanding review. Escape after generation has already finished does
 not cancel this external review; quitting OpenCode does.
 
-Reviewers remain the existing Claude models (Haiku canary, Opus critic, Sonnet
-rule review). They require Claude Code authentication in the same instance;
-ChatGPT login alone does not authenticate them. Run `./claude.sh <name>` once
-to complete Claude login if needed, then launch with `--agent opencode` again.
-Reviewer failures are reported rather than labelled a clean pass. Relaunch the
-instance after updating the harness so the new image and plugin take effect.
+OpenCode reviewers run through `opencode run` using the worker's selected GPT
+model and reasoning setting, authenticated by the same OpenCode/ChatGPT login.
+The canary and rule reviewer have read-only tools; the critic can run tests.
+Separate reviewer sessions disable their own gate hooks to prevent recursion.
+Optional per-phase OpenCode model overrides are documented in
+[`gate/Readme.md`](gate/Readme.md#reviewer-backends). Claude Code workers keep
+their existing Claude reviewers. Reviewer failures are reported rather than
+labelled a clean pass. Relaunch the instance after updating the harness so the
+new binary and plugin take effect.
 
 ### OpenCode startup diagnostics without tmux
 

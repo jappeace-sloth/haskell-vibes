@@ -59,13 +59,16 @@ function requiredString(payload: unknown, field: string): string {
 }
 
 /** Run the existing hook protocol without a shell or runtime package imports. */
-function runGate(command: GateCommand, payload: GatePayload, directory: string, signal?: AbortSignal): Promise<GateVerdict | undefined> {
+function runGate(command: GateCommand, payload: GatePayload, directory: string, signal?: AbortSignal, model?: SessionUser["model"]): Promise<GateVerdict | undefined> {
   return new Promise((accept, reject) => {
     const child = spawn("claude-gate", [command], {
       cwd: directory,
       stdio: ["pipe", "pipe", "pipe"],
       detached: true,
-      env: { ...process.env, CLAUDE_GATE_SHARED_PROCESS_GROUP: "1" },
+      env: {
+        ...process.env, CLAUDE_GATE_SHARED_PROCESS_GROUP: "1", CLAUDE_GATE_BACKEND: "opencode",
+        ...(model ? { OPENCODE_GATE_MODEL: `${model.providerID}/${model.modelID}`, OPENCODE_GATE_VARIANT: model.variant ?? "" } : {}),
+      },
     });
     let stdout = "";
     let stderr = "";
@@ -220,14 +223,14 @@ function transcript(messages: Messages, turnID?: string): string {
 }
 
 /** Run the gate with an already-flushed snapshot, cleaned up even on cancellation. */
-async function checkTurn(context: PluginInput, state: SessionState, sessionID: string, messages: Messages, signal: AbortSignal): Promise<GateVerdict | undefined> {
+async function checkTurn(context: PluginInput, state: SessionState, sessionID: string, messages: Messages, review: { signal: AbortSignal; model: SessionUser["model"] }): Promise<GateVerdict | undefined> {
   const turnID = state.turnID;
   const temporary = await mkdtemp(join(tmpdir(), "opencode-stopgate-"));
   try {
-    if (signal.aborted) return undefined;
+    if (review.signal.aborted) return undefined;
     const path = join(temporary, "transcript.jsonl");
     await writeFile(path, transcript(messages, turnID));
-    return await runGate("stop-gate", { session_id: sessionID, transcript_path: path }, context.directory, signal);
+    return await runGate("stop-gate", { session_id: sessionID, transcript_path: path }, context.directory, review.signal, review.model);
   } finally {
     await rm(temporary, { recursive: true });
   }
@@ -284,7 +287,7 @@ async function onIdle(context: PluginInput, state: SessionState, sessionID: stri
   if (!lastUser || lastUser.role !== "user") throw new Error("OpenCode completed a turn without a user message. Check the session transcript before retrying.");
   state.controller = new AbortController();
   try {
-    const verdict = await checkTurn(context, state, sessionID, messages, state.controller.signal);
+    const verdict = await checkTurn(context, state, sessionID, messages, { signal: state.controller.signal, model: lastUser.model });
     if (verdict && revision === state.revision && !state.closing) {
       await deliverVerdict(context, state, { sessionID, lastUser, verdict, revision, assistantID: latest.id });
       state.checked = latest.id;
@@ -296,7 +299,7 @@ async function onIdle(context: PluginInput, state: SessionState, sessionID: stri
 
 /** OpenCode does not await event hooks, so report rejected work explicitly. */
 async function reportFailure(client: Client, error: unknown): Promise<void> {
-  const message = `Stopgate did not check this turn: ${errorMessage(error)}. Check the OpenCode log and claude-gate installation; for reviewer login failures, run claude once in this instance.`;
+  const message = `Stopgate did not check this turn: ${errorMessage(error)}. Check the OpenCode log and claude-gate installation; for reviewer login failures, run opencode auth login in this instance.`;
   const reports = await Promise.allSettled([
     client.app.log({ body: { service: "stopgate", level: "error", message }, throwOnError: true }),
     client.tui.showToast({ body: { title: "Stopgate failed", message, variant: "error", duration: 20000 }, throwOnError: true }),
@@ -311,6 +314,9 @@ async function reportFailure(client: Client, error: unknown): Promise<void> {
 // promptAsync resumes a rejected turn using the same agent/model. Gate prompts
 // are synthetic, so they neither reset phase counters nor erase earlier claims.
 const Stopgate: Plugin = async (context) => {
+  // Reviewer processes share the user's OpenCode login and config, but must not
+  // review their own answers or append their edits to the worker's gate state.
+  if (process.env.OPENCODE_GATE_REVIEWER === "1") return {};
   const sessions = new Map<string, SessionState>();
   let closing = false;
   return {

@@ -11,7 +11,7 @@ const gateFixture = `#!${process.execPath}
 const fs = require('node:fs');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 if (input.transcript_path) input.transcript = fs.readFileSync(input.transcript_path, 'utf8');
-fs.appendFileSync(process.env.GATE_CALLS, JSON.stringify({command: process.argv[2], ...input}) + '\\n');
+fs.appendFileSync(process.env.GATE_CALLS, JSON.stringify({command: process.argv[2], backend: process.env.CLAUDE_GATE_BACKEND, model: process.env.OPENCODE_GATE_MODEL, variant: process.env.OPENCODE_GATE_VARIANT, ...input}) + '\\n');
 if (process.argv[2] !== 'stop-gate') process.exit(0);
 const verdict = JSON.parse(fs.readFileSync(process.env.GATE_VERDICT, 'utf8'));
 if (verdict?.crash) { process.stderr.write('reviewer broke'); process.exit(7); }
@@ -94,6 +94,27 @@ test("ChatGPT rejection resumes the same agent/model without resetting the turn"
   assert.equal(exported.split("\n").filter((line) => JSON.parse(line).type === "user").length, 0);
   await prompt("root", user("user-2"));
   assert.equal((await calls()).at(-1).command, "reset");
+});
+
+test("the gate selects OpenCode reviewers using the worker model and variant", async (context) => {
+  const { prompt, idle, calls } = context.fixture;
+  await prompt();
+  await idle();
+  const review = (await calls()).at(-1);
+  assert.equal(review.backend, "opencode");
+  assert.equal(review.model, "openai/gpt-6-astra");
+  assert.equal(review.variant, "high");
+});
+
+test("nested OpenCode reviewers install no gate hooks", async () => {
+  const previous = process.env.OPENCODE_GATE_REVIEWER;
+  process.env.OPENCODE_GATE_REVIEWER = "1";
+  try {
+    assert.deepEqual(await Stopgate({}), {});
+  } finally {
+    if (previous === undefined) delete process.env.OPENCODE_GATE_REVIEWER;
+    else process.env.OPENCODE_GATE_REVIEWER = previous;
+  }
 });
 
 test("records edit, write, and multi-file patches including deletes and moves", async (context) => {

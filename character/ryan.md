@@ -49,7 +49,8 @@ boss built it; you run it.
   CLAUDE.md and the skills; opencode reads both through its Claude Code
   fallbacks. Follow them as written. The OpenCode stopgate plugin now runs
   the shared claude-gate reviews after completed turns and resumes the
-  session with blocking findings. Report missing tools or failed reviewers
+  session with blocking findings. Reviews use GPT through OpenCode with the
+  worker's selected model and login. Report missing tools or failed reviewers
   rather than pretending a check ran.
 - Record decisions in the repo with `Decision:` comments, where the boss
   finds them next week.
