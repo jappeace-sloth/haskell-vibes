@@ -34,12 +34,20 @@ Having to find this public repo is just one more step.
 
 ## Prerequisites
 
-### Sudoers rule for `systemd-nspawn`
-`systemd-nspawn` has no supported rootless mode. Add a `NOPASSWD` rule scoped to
-just that binary so launches don't prompt:
+### Sudoers rules for the launcher
+`systemd-nspawn` has no supported rootless mode, and before booting the
+launcher clears stale systemd state left by an unclean exit (Ctrl-C, closed
+terminal) with `systemctl` and `machinectl`, which also need root. Add
+`NOPASSWD` rules scoped to exactly those commands so launches don't prompt:
 ```
 YOUR_USER ALL=(root) NOPASSWD: /run/current-system/sw/bin/systemd-nspawn
+YOUR_USER ALL=(root) NOPASSWD: /run/current-system/sw/bin/systemctl reset-failed machine-*.scope
+YOUR_USER ALL=(root) NOPASSWD: /run/current-system/sw/bin/systemctl stop machine-*.scope
+YOUR_USER ALL=(root) NOPASSWD: /run/current-system/sw/bin/machinectl terminate *
 ```
+Allowlisting only `systemd-nspawn` works until the first crashed session,
+after which every launch asks for a password. On NixOS see
+`nix/claude-launcher-sudo.nix` in jappeace/linux-config for the module form.
 
 ### GitHub bot account
 Create a separate GitHub bot account to give your LLM git access.

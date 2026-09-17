@@ -4,8 +4,12 @@
 # On Linux: uses systemd-nspawn (fast, uses host nix-daemon directly).
 # On macOS: uses Docker (cross-builds the image via nixos/nix container).
 #
-# systemd-nspawn requires sudo — suggested sudoers line:
+# systemd-nspawn and the stale-machine cleanup below require sudo. Suggested
+# sudoers lines (see readme.md, "Sudoers rules for the launcher"):
 #     YOUR_USER ALL=(root) NOPASSWD: /run/current-system/sw/bin/systemd-nspawn
+#     YOUR_USER ALL=(root) NOPASSWD: /run/current-system/sw/bin/systemctl reset-failed machine-*.scope
+#     YOUR_USER ALL=(root) NOPASSWD: /run/current-system/sw/bin/systemctl stop machine-*.scope
+#     YOUR_USER ALL=(root) NOPASSWD: /run/current-system/sw/bin/machinectl terminate *
 
 set -xe
 
