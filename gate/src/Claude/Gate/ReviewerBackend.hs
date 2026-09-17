@@ -33,10 +33,12 @@ backendExecutable :: ReviewerBackend -> String
 backendExecutable ClaudeCode = "claude"
 backendExecutable OpenCode = "opencode"
 
--- Decision: inherit the OpenCode worker's provider/model rather than hard-code
--- a GPT SKU or translate Claude model names. Available GPT models vary by login;
--- per-phase OpenCode overrides allow a cheaper canary without affecting Claude.
--- | Select the backend-specific phase override or the worker model.
+-- Decision: use GPT-5.6 Terra Fast for the OpenAI canary and GPT-5.6 Luna for
+-- rules, reserving the worker's model for adversarial critique. Both were tested
+-- through the ChatGPT login; the catalogue's Mini, Spark, and GPT-5.4 entries
+-- were rejected by that endpoint. Other providers retain their worker model,
+-- avoiding an unexpected OpenAI login requirement. Per-phase overrides win.
+-- | Select a phase override or the backend's default model tier.
 reviewModel :: ReviewPhase -> IO Text
 reviewModel phase = do
   backend <- reviewerBackend
@@ -47,10 +49,19 @@ reviewModel phase = do
       RuleReviewer -> envStr "CLAUDE_REVIEWER_MODEL" "claude-sonnet-5"
     OpenCode -> do
       inherited <- envStr "OPENCODE_GATE_MODEL" ""
-      model <- envStr (openCodeModelVariable phase) inherited
+      model <- envStr (openCodeModelVariable phase) (defaultOpenCodeModel phase inherited)
       if Text.null (Text.strip model) || not ("/" `Text.isInfixOf` model)
         then ioError (userError "OpenCode reviewer has no provider/model. Restart with the updated stopgate plugin or set OPENCODE_GATE_MODEL to an available openai/model-id.")
         else pure model
+
+defaultOpenCodeModel :: ReviewPhase -> Text -> Text
+defaultOpenCodeModel phase worker =
+  if "openai/" `Text.isPrefixOf` worker
+    then case phase of
+      ComplexityCanary -> "openai/gpt-5.6-terra-fast"
+      AdversarialCritic -> worker
+      RuleReviewer -> "openai/gpt-5.6-luna"
+    else worker
 
 openCodeModelVariable :: ReviewPhase -> String
 openCodeModelVariable ComplexityCanary = "OPENCODE_DUMBIFY_MODEL"

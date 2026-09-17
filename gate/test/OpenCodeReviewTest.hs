@@ -41,7 +41,7 @@ instance ToJSON ReviewCall
 
 tests :: TestTree
 tests = testGroup "OpenCode reviewer backend"
-  [ testCase "all phases inherit the GPT worker without invoking Claude" (allPhases [])
+  [ testCase "OpenAI workers use Terra Fast for canary, Luna for rules, and the worker for critique" (allPhases [])
   , testCase "per-phase models do not inherit an incompatible worker variant" (allPhases
       [("OPENCODE_DUMBIFY_MODEL", "openai/canary"), ("OPENCODE_CRITIQUE_MODEL", "openai/critic"), ("OPENCODE_REVIEWER_MODEL", "openai/rules")])
   , testCase "invalid rule-review configuration leaves edits queued" invalidRuleModel
@@ -126,18 +126,22 @@ allPhases overrides = withFixture overrides $ \fixture -> do
   jsonAt ["systemMessage"] verdict @?= Just (String "gate clear: dumbify critique rules")
   calls <- readCalls fixture
   length calls @?= 3
-  forM_ (zip ["OPENCODE_DUMBIFY_MODEL", "OPENCODE_CRITIQUE_MODEL", "OPENCODE_REVIEWER_MODEL"] calls) $ \(phase, call) ->
-    checkCall phase (lookup phase overrides) call
+  forM_ (zip expectedDefaultModels calls) $ \((phase, defaultModel), call) ->
+    checkCall phase (fromMaybe defaultModel (lookup phase overrides)) call
 
-checkCall :: String -> Maybe String -> ReviewCall -> Assertion
-checkCall phase override call = do
-  let model = fromMaybe "openai/gpt-6-astra" override
+expectedDefaultModels :: [(String, String)]
+expectedDefaultModels =
+  [ ("OPENCODE_DUMBIFY_MODEL", "openai/gpt-5.6-terra-fast")
+  , ("OPENCODE_CRITIQUE_MODEL", "openai/gpt-6-astra")
+  , ("OPENCODE_REVIEWER_MODEL", "openai/gpt-5.6-luna")
+  ]
+
+checkCall :: String -> String -> ReviewCall -> Assertion
+checkCall phase model call = do
   assertBool "uses the run command" (["run"] `isPrefixOf` callArguments call)
   argument "--format" (callArguments call) @?= Just "json"
   argument "--model" (callArguments call) @?= Just model
-  argument "--variant" (callArguments call) @?= case override of
-    Nothing -> Just "high"
-    Just modelOverride -> if modelOverride == "openai/gpt-6-astra" then Just "high" else Nothing
+  argument "--variant" (callArguments call) @?= if model == "openai/gpt-6-astra" then Just "high" else Nothing
   callNested call @?= "1"
   jsonAt ["small_model"] (callConfig call) @?= Just (String (Text.pack model))
   jsonAt ["provider", "fixture", "name"] (callConfig call) @?= Just (String "preserved")
