@@ -93,6 +93,16 @@ To run an instance on [opencode](https://opencode.ai) instead of Claude Code
 ```
 ./claude.sh <instance_name> --agent opencode
 ```
+Set a launch default with `--model provider/model`. `ryan.sh` hardcodes Astra.
+To use another model, create another instance script with its own name and model:
+```sh
+./ryan.sh
+./claude.sh <instance_name> --agent opencode --model openai/gpt-6-astra-fast
+```
+You can still switch models during a session with `/models`. That selection
+lives in OpenCode's unpersisted state directory, so use `--model` to choose
+the default on each container launch.
+
 Everything else stays the same: the container, the vibes clone, the GitHub
 bot, the MCP servers (playwright, hoogle, tmux) and `CLAUDE.md` plus `skills/`,
 which opencode reads through its Claude Code compatibility fallbacks. On the
