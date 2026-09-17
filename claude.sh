@@ -11,7 +11,7 @@ set -xe
 
 if [ -z "$1" ]; then
     echo "Error: Instance name required."
-    echo "Usage: $0 <instance_name> [--vanilla] [--agent claude|opencode]"
+    echo "Usage: $0 <instance_name> [--vanilla] [--agent claude|opencode] [--model provider/model]"
     exit 1
 fi
 
@@ -20,12 +20,16 @@ shift
 
 VANILLA=0
 AGENT=claude
+OPENCODE_MODEL=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --vanilla) VANILLA=1 ;;
         --agent)
             shift
             AGENT="${1:?--agent needs a value: claude or opencode}" ;;
+        --model)
+            shift
+            OPENCODE_MODEL="${1:?--model needs a provider/model value, for example openai/gpt-6-astra}" ;;
         *) echo "Error: unknown argument '$1'"; exit 1 ;;
     esac
     shift
@@ -46,6 +50,11 @@ case "$AGENT" in
     claude|opencode) ;;
     *) echo "Error: unknown agent '$AGENT' (expected claude or opencode)"; exit 1 ;;
 esac
+
+if [ -n "$OPENCODE_MODEL" ] && [ "$AGENT" != opencode ]; then
+    echo "Error: --model configures OpenCode. Add --agent opencode or remove --model."
+    exit 1
+fi
 
 mkdir -p "../vibes/$INSTANCE_NAME"
 
@@ -100,13 +109,14 @@ echo "$UPDATED_JSON" > "$INSTANCE_JSON"
 # instead of being a second hand-maintained server list, so both harnesses
 # always get the same MCP servers. `permission: "allow"` is opencode's
 # bypassPermissions: the container is the sandbox, exactly as for claude.
-# No model is pinned because which OpenAI models a ChatGPT plan exposes
-# varies; the user picks one with /models and opencode remembers it in its
-# state dir. autoupdate is off because the binary comes from nix. The file
+# The optional --model pins the launch default: /models remembers choices under
+# ~/.local/state/opencode, which is not persisted across container launches.
+# Without --model, retain model discovery because ChatGPT plan access varies.
+# autoupdate is off because the binary comes from nix. The file
 # is written into the per-launch config snapshot and bind-mounted read-only
 # like CLAUDE.md, so the agent cannot widen its own permissions.
 write_opencode_config() {
-    jq -n --argjson mcp "$MCP_CONFIG" '{
+    jq -n --argjson mcp "$MCP_CONFIG" --arg model "$OPENCODE_MODEL" '{
         "$schema": "https://opencode.ai/config.json",
         autoupdate: false,
         permission: "allow",
@@ -116,7 +126,7 @@ write_opencode_config() {
             command: ([.value.command] + .value.args),
             enabled: true
         }))
-    }' > "$1/opencode.json"
+    } + (if $model != "" then {model: $model} else {} end)' > "$1/opencode.json"
 }
 
 # Decision: opencode's own models.dev fetch is disabled
