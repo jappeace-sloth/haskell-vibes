@@ -13,15 +13,15 @@ module Claude.Gate.Dumbify
   ) where
 
 import Control.Monad (when)
-import Data.Maybe (isJust)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Claude.Gate.DiffRender (renderDiffs)
 import Claude.Gate.EditStack (readEdits, stackFilePaths, stackHasCode)
 import Claude.Gate.FileContext (renderFullFiles)
-import Claude.Gate.GateConfig (envInt, envStr, phaseDisabled)
+import Claude.Gate.GateConfig (envInt, phaseDisabled)
 import Claude.Gate.HookProtocol (BlockReason (BlockReason), blockAndExit)
-import Claude.Gate.NestedClaude (NestedResult (NestedBroken, NestedOutput), Reviewer (Reviewer), runNested, surfaceNestedFailure)
+import Claude.Gate.NestedReviewer (NestedResult (NestedBroken, NestedOutput), Reviewer (Reviewer), runNested, surfaceNestedFailure)
+import Claude.Gate.ReviewerBackend (ReviewPhase (ComplexityCanary), reviewModel)
 import Claude.Gate.Repo (repoForFiles)
 import Claude.Gate.ReviewPrompt (maxDiffPromptChars)
 import Claude.Gate.TurnState
@@ -34,18 +34,16 @@ import Claude.Gate.TurnState
   , writeCounter
   , writeFlag
   )
-import System.Directory (findExecutable)
 
 -- | Run Phase 0. Fires only for a code-touching turn whose stack has not yet
--- converged, and only when claude is available.
+-- converged. A missing reviewer executable is surfaced by runNested.
 runDumbify :: Text -> TurnPaths -> IO ()
 runDumbify session paths = do
   disabled <- phaseDisabled "CLAUDE_SKIP_DUMBIFY"
   done <- flagExists (dumbifyDone paths)
   stackReady <- fileNonEmpty (reviewStack paths)
   hasCode <- stackHasCode (reviewStack paths)
-  claudeAvailable <- isJust <$> findExecutable "claude"
-  when (not disabled && not done && stackReady && hasCode && claudeAvailable) $ do
+  when (not disabled && not done && stackReady && hasCode) $ do
     currentMark <- stackLineCount (reviewStack paths)
     previousMark <- readMark (dumbifyEditmark paths)
     if previousMark == Just currentMark
@@ -69,7 +67,7 @@ runDumbifyRound session paths currentMark thisRound maxRounds = do
   fullFiles <- renderFullFiles files
   repo <- repoForFiles files
   timeoutSecs <- envInt "CLAUDE_DUMBIFY_TIMEOUT" 300
-  model <- envStr "CLAUDE_DUMBIFY_MODEL" "claude-haiku-4-5"
+  model <- reviewModel ComplexityCanary
   let reviewer = Reviewer model True timeoutSecs repo
       prompt = dumbifyPrompt (renderDiffs edits) fullFiles
   result <- runNested reviewer prompt

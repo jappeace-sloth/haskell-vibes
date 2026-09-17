@@ -1,6 +1,6 @@
--- | Running a nested @claude -p@ reviewer and surfacing its failures loudly.
+-- | Running a nested Claude Code or OpenCode reviewer and surfacing failures.
 --
--- Each Stop-gate phase shells out to a fresh @claude@ to review the turn. Two
+-- Each Stop-gate phase shells out to a fresh reviewer to review the turn. Two
 -- rules from the shell gate are preserved here. First, the nested call is launched
 -- with every gate phase disabled in its environment, so its own hooks cannot
 -- re-enter this gate. Second, the gate FAILS LOUD: a reviewer that timed out,
@@ -8,7 +8,7 @@
 -- its first occurrence this turn, blocks the Stop with a descriptive reason for
 -- the model AND a user-visible systemMessage naming the weird exit status, so a
 -- silently broken reviewer is never mistaken for a clean pass by either of them.
-module Claude.Gate.NestedClaude
+module Claude.Gate.NestedReviewer
   ( Reviewer(..)
   , NestedResult(..)
   , GateFailure(..)
@@ -25,6 +25,8 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding (decodeUtf8Lenient, encodeUtf8)
 import Claude.Gate.HookProtocol (BlockReason (BlockReason), blockAndExitWithNotice)
+import Claude.Gate.OpenCodeReviewer (openCodeAnswer, openCodeArgs, openCodeConfig)
+import Claude.Gate.ReviewerBackend (ReviewerBackend (ClaudeCode, OpenCode), backendExecutable, reviewerBackend)
 import Claude.Gate.SpawnAnnotation (annotateSpawn)
 import Claude.Gate.TurnState (flagExists, writeFlag)
 import System.Directory (createDirectoryIfMissing)
@@ -33,10 +35,10 @@ import System.Exit (ExitCode (ExitFailure, ExitSuccess))
 import System.FilePath (takeDirectory)
 import System.Process.Typed (byteStringInput, proc, readProcess, setEnv, setStdin, setWorkingDir)
 
--- | How to launch one nested reviewer. A read-only reviewer (the dumbify canary
--- and the rule reviewer) gets MCP disabled and only Read/Grep/Glob, skipping the
--- MCP cold-start cost; the critic is deliberately given neither, so it has full
--- tools to gather counter-evidence.
+-- | How to launch one nested reviewer. The canary and rule reviewer receive
+-- read-only tools. Claude also disables their MCP servers; OpenCode keeps its
+-- configuration but denies MCP tools. The critic has full tools for tests and
+-- counter-evidence, with a prompt instructing it to report rather than fix.
 data Reviewer = Reviewer
   { reviewerModel :: Text
   , reviewerReadOnly :: Bool
@@ -50,22 +52,46 @@ data NestedResult
   = NestedBroken Int Bool Text
   | NestedOutput Text
 
--- | Run @timeout N claude -p ... --model M@ feeding the prompt on stdin. The
+-- | Run the selected reviewer under @timeout@, feeding the prompt on stdin. The
 -- timeout binary kills a hung reviewer (exit 124). A non-zero exit, an empty
 -- stdout, or a spawn exception all count as broken.
 runNested :: Reviewer -> Text -> IO NestedResult
 runNested reviewer prompt = do
-  baseEnv <- getEnvironment
-  args <- timeoutArgs reviewer
-  let configure =
-        setStdin (byteStringInput (LazyByteString.fromStrict (encodeUtf8 prompt)))
-          . setEnv (guardEnv baseEnv)
-          . maybe id setWorkingDir (reviewerWorkdir reviewer)
-      reviewerProcess = configure (proc "timeout" args)
-  outcome <- tryAny (annotateSpawn (nestedSpawnLabel reviewer) (readProcess reviewerProcess))
+  outcome <- tryAny (runReviewer reviewer prompt)
   pure $ case outcome of
     Left err -> NestedBroken 1 True (Text.pack (displayException err))
-    Right (exitCode, out, errOut) -> interpret exitCode (decodeLazy out) (decodeLazy errOut)
+    Right result -> result
+
+runReviewer :: Reviewer -> Text -> IO NestedResult
+runReviewer reviewer prompt = do
+  backend <- reviewerBackend
+  baseEnv <- getEnvironment
+  environment <- reviewerEnvironment backend reviewer baseEnv
+  args <- timeoutArgs backend reviewer environment
+  outcome <- annotateSpawn (nestedSpawnLabel backend reviewer) $
+    readProcess
+      (setStdin (byteStringInput (LazyByteString.fromStrict (encodeUtf8 prompt)))
+        (setEnv environment
+          (maybe id setWorkingDir (reviewerWorkdir reviewer) (proc "timeout" args))))
+  pure (reviewerResult backend outcome)
+
+reviewerResult :: ReviewerBackend -> (ExitCode, LazyByteString.ByteString, LazyByteString.ByteString) -> NestedResult
+reviewerResult backend (exitCode, out, errOut) = case backend of
+  ClaudeCode -> interpret exitCode (decodeLazy out) (decodeLazy errOut)
+  OpenCode -> case exitCode of
+    ExitFailure code -> NestedBroken code (emptyOutput (decodeLazy out)) (decodeLazy errOut <> "\n" <> decodeLazy out)
+    ExitSuccess -> case openCodeAnswer (decodeLazy out) of
+      Left reason -> NestedBroken 1 True (reason <> "\n" <> decodeLazy errOut)
+      Right answer -> NestedOutput answer
+
+reviewerEnvironment :: ReviewerBackend -> Reviewer -> [(String, String)] -> IO [(String, String)]
+reviewerEnvironment backend reviewer environment = case backend of
+  ClaudeCode -> pure (guardEnv environment)
+  OpenCode -> case openCodeConfig (reviewerModel reviewer) (reviewerReadOnly reviewer) (lookup "OPENCODE_CONFIG_CONTENT" environment) of
+    Left reason -> ioError (userError ("Cannot configure the OpenCode reviewer: " <> reason <> ". Fix OPENCODE_CONFIG_CONTENT before retrying."))
+    Right configuration -> pure
+      (upsert "OPENCODE_GATE_REVIEWER" "1"
+        (upsert "OPENCODE_CONFIG_CONTENT" configuration (guardEnv environment)))
 
 interpret :: ExitCode -> Text -> Text -> NestedResult
 interpret exitCode out err
@@ -89,19 +115,20 @@ exitNumber (ExitFailure n) = n
 -- cancels that group on new input or shutdown. Keep timeout in that group with
 -- --foreground there; its default separate group would orphan the reviewer.
 -- Claude Code retains timeout's usual process-group handling.
-timeoutArgs :: Reviewer -> IO [String]
-timeoutArgs reviewer = do
+timeoutArgs :: ReviewerBackend -> Reviewer -> [(String, String)] -> IO [String]
+timeoutArgs backend reviewer environment = do
   sharedGroup <- (== Just "1") <$> lookupEnv "CLAUDE_GATE_SHARED_PROCESS_GROUP"
   pure $
     if sharedGroup
-      then "--foreground" : reviewerArgs reviewer
-      else reviewerArgs reviewer
+      then "--foreground" : reviewerArgs backend reviewer environment
+      else reviewerArgs backend reviewer environment
 
-reviewerArgs :: Reviewer -> [String]
-reviewerArgs reviewer =
-  [show (reviewerTimeoutSecs reviewer), "claude", "-p"]
-    <> (if reviewerReadOnly reviewer then readOnlyArgs else [])
-    <> ["--model", Text.unpack (reviewerModel reviewer)]
+reviewerArgs :: ReviewerBackend -> Reviewer -> [(String, String)] -> [String]
+reviewerArgs backend reviewer environment =
+  [show (reviewerTimeoutSecs reviewer), backendExecutable backend]
+    <> case backend of
+      ClaudeCode -> ["-p"] <> (if reviewerReadOnly reviewer then readOnlyArgs else []) <> ["--model", Text.unpack (reviewerModel reviewer)]
+      OpenCode -> openCodeArgs (reviewerModel reviewer) environment
 
 readOnlyArgs :: [String]
 readOnlyArgs = ["--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "--tools", "Read", "Grep", "Glob"]
@@ -110,9 +137,9 @@ readOnlyArgs = ["--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "-
 -- broken 'NestedResult' names which reviewer's process could not start (rather
 -- than a bare @timeout: posix_spawnp@). Keyed by model, which distinguishes the
 -- canary, rule reviewer and critic.
-nestedSpawnLabel :: Reviewer -> String
-nestedSpawnLabel reviewer =
-  "timeout claude (nested " <> Text.unpack (reviewerModel reviewer) <> " reviewer)"
+nestedSpawnLabel :: ReviewerBackend -> Reviewer -> String
+nestedSpawnLabel backend reviewer =
+  "timeout " <> backendExecutable backend <> " (nested " <> Text.unpack (reviewerModel reviewer) <> " reviewer)"
 
 -- | Disable every gate phase in the nested reviewer's environment so its own
 -- Stop hook cannot recurse into this gate.

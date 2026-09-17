@@ -33,13 +33,24 @@ import Hedgehog (Gen, Property, forAll, property, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
 import System.Directory (getTemporaryDirectory)
+import System.Environment (getProgName)
+import System.Exit (exitFailure)
+import OpenCodeReviewTest qualified
 import System.FilePath ((</>))
 import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.Hedgehog (testProperty)
 import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 
 main :: IO ()
-main = defaultMain tests
+main = do
+  program <- getProgName
+  if program == "opencode"
+    then OpenCodeReviewTest.runFixture
+    else if program == "claude"
+      then exitFailure
+      else if program == "claude-gate"
+        then OpenCodeReviewTest.runGate
+        else defaultMain tests
 
 tests :: TestTree
 tests =
@@ -60,6 +71,7 @@ tests =
     , counterTests
     , spawnAnnotationTests
     , workingHoursTests
+    , OpenCodeReviewTest.tests
     ]
 
 -- | The rest rules over the coded Amsterdam clock. The first case is the

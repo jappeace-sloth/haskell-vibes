@@ -90,7 +90,9 @@ library
       Claude.Gate.SpawnAnnotation
       Claude.Gate.GateConfig
       Claude.Gate.EditStack
-      Claude.Gate.NestedClaude
+      Claude.Gate.NestedReviewer
+      Claude.Gate.ReviewerBackend
+      Claude.Gate.OpenCodeReviewer
       Claude.Gate.Transcript
       Claude.Gate.ReviewPrompt
       Claude.Gate.Dumbify
@@ -128,6 +130,7 @@ test-suite unit
   import: common-options
   type: exitcode-stdio-1.0
   main-is: Test.hs
+  other-modules: OpenCodeReviewTest
   ghc-options: -Wno-unused-packages -threaded -rtsopts "-with-rtsopts=-N"
   hs-source-dirs:
       test
@@ -142,4 +145,6 @@ test-suite unit
       text           < 2.2,
       directory      < 1.4,
       filepath       < 1.6,
+      temporary      < 1.4,
+      typed-process  < 0.3,
       time           < 1.15

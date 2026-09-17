@@ -35,15 +35,15 @@ module Claude.Gate.Critique
 
 import Control.Concurrent (threadDelay)
 import Control.Monad (when)
-import Data.Maybe (fromMaybe, isJust)
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as TextIO
 import Claude.Gate.DiffRender (renderDiffs)
 import Claude.Gate.EditStack (readEdits, stackFilePaths)
-import Claude.Gate.GateConfig (envInt, envStr, phaseDisabled)
+import Claude.Gate.GateConfig (envInt, phaseDisabled)
 import Claude.Gate.HookProtocol (BlockReason (BlockReason), blockAndExit)
-import Claude.Gate.NestedClaude
+import Claude.Gate.NestedReviewer
   ( GateFailure (GateFailure, failureBlockReason, failureHeadline, failureLogBody, failureUserNotice)
   , NestedResult (NestedBroken, NestedOutput)
   , Reviewer (Reviewer)
@@ -52,6 +52,7 @@ import Claude.Gate.NestedClaude
   , surfaceNestedFailure
   )
 import Claude.Gate.Repo (commitHistory, repoForFilesOrCwd)
+import Claude.Gate.ReviewerBackend (ReviewPhase (AdversarialCritic), reviewModel)
 import Claude.Gate.ReviewPrompt (maxDiffPromptChars)
 import Claude.Gate.Transcript (turnAssistantText)
 import Claude.Gate.TurnState
@@ -64,7 +65,7 @@ import Claude.Gate.TurnState
   , writeCounter
   , writeFlag
   )
-import System.Directory (doesFileExist, findExecutable)
+import System.Directory (doesFileExist)
 
 -- | The critic refutes both the code and the claims, so it runs on EVERY turn,
 -- including conversational ones with no edits. A shrug (no new edits since the
@@ -106,8 +107,7 @@ runCritique :: Text -> Maybe FilePath -> TurnPaths -> IO ()
 runCritique session transcript paths = do
   disabled <- phaseDisabled "CLAUDE_SKIP_CRITIQUE"
   done <- flagExists (critiqueDone paths)
-  claudeAvailable <- isJust <$> findExecutable "claude"
-  when (not disabled && not done && claudeAvailable) $ do
+  when (not disabled && not done) $ do
     edits <- editPresence paths
     currentMark <- case edits of
       EditsRecorded -> stackLineCount (reviewStack paths)
@@ -223,7 +223,7 @@ runCriticOnDossier session paths edits currentMark claims = do
   previousRound <- readCounter (critiqueRound paths)
   roundCap <- envInt "CLAUDE_CRITIQUE_MAX_ROUNDS" 2
   timeoutSecs <- envInt "CLAUDE_CRITIQUE_TIMEOUT" 1200
-  model <- envStr "CLAUDE_CRITIQUE_MODEL" "claude-opus-4-8"
+  model <- reviewModel AdversarialCritic
   -- The round is computed once and threaded to both the prompt and the block, so
   -- the critic is told the same round the worker is (the nested critic runs with
   -- the critique phase disabled, so it never bumps this counter mid-round).
@@ -312,7 +312,7 @@ critiqueAnchor RoundBudget { thisRound, maxRounds } history =
 
 critiqueHeader :: Text
 critiqueHeader =
-  "You are an adversarial correctness critic. A different, larger Claude Code agent\n\
+  "You are an adversarial correctness critic. A different agent\n\
   \just finished a turn. Below are the code changes it made (possibly none) and the\n\
   \claims it made about what it did or found. Your single job is to PROVE THE WORKER\n\
   \WRONG, by any means necessary. Assume both the code and the claims are wrong until\n\
