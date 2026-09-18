@@ -15,7 +15,7 @@ import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import GHC.Generics (Generic)
-import System.Directory (createFileLink, doesFileExist)
+import System.Directory (createFileLink, doesDirectoryExist, doesFileExist, removePathForcibly)
 import System.Environment (getArgs, getEnv, getEnvironment, getExecutablePath, lookupEnv)
 import System.Exit (ExitCode (ExitSuccess))
 import System.FilePath ((</>))
@@ -49,6 +49,7 @@ tests = testGroup "OpenCode reviewer backend"
   , testCase "malformed JSON cannot approve a turn" (failedReview "malformed")
   , testCase "empty answer cannot approve a turn" (failedReview "empty")
   , testCase "unfinished answer cannot approve a turn" (failedReview "unfinished")
+  , testCase "a Stop whose turn was reset while the reviewer ran ends quietly" resetDuringReview
   ]
 
 withFixture :: [(String, String)] -> (Fixture -> IO ()) -> IO ()
@@ -196,6 +197,21 @@ failedReview failure = withFixture [("REVIEW_FAILURE", failure)] $ \fixture -> d
     assertBool "provider error survives into feedback" ("Fixture login expired" `isInfixOf` Bytes.unpack (encode verdict))
   doesFileExist (fixtureDirectory fixture </> "claude-turn-state/test/critique-approved") >>= (@?= False)
 
+-- | The user submits the next prompt while a reviewer is still running: the
+-- reset wipes the turn directory under the gate. The gate must then end with
+-- exit 0 and no decision (nothing to block on a turn that is over), spawn no
+-- further reviewers for the dead turn, and leave the directory absent so the
+-- next turn starts clean.
+resetDuringReview :: Assertion
+resetDuringReview = withFixture [("REVIEW_RESET_DURING", "1")] $ \fixture -> do
+  recordCode fixture
+  (status, output, diagnostic) <- invokeGate fixture "stop-gate" (stopPayload fixture)
+  assertBool (Bytes.unpack diagnostic) (status == ExitSuccess)
+  output @?= ""
+  calls <- readCalls fixture
+  length calls @?= 1
+  doesDirectoryExist (fixtureDirectory fixture </> "claude-turn-state/test") >>= (@?= False)
+
 -- | Mock `opencode run`, invoked through the symlink created by withFixture.
 -- The real gate supplies the arguments, prompt, and child environment.
 runFixture :: IO ()
@@ -207,6 +223,12 @@ runFixture = do
   calls <- getEnv "GATE_REVIEW_CALLS"
   Bytes.appendFile calls (encode (ReviewCall arguments prompt nested configuration) <> "\n")
   failure <- lookupEnv "REVIEW_FAILURE"
+  resetDuring <- lookupEnv "REVIEW_RESET_DURING"
+  -- Simulate the UserPromptSubmit reset racing this review: wipe the turn
+  -- directory the gate is waiting to write into.
+  when (resetDuring == Just "1") $ do
+    tmp <- getEnv "TMPDIR"
+    removePathForcibly (tmp </> "claude-turn-state" </> "test")
   if failure == Just "malformed"
     then putStrLn "not json"
     else emitReview failure

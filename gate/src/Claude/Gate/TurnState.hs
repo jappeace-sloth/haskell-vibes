@@ -12,6 +12,9 @@ module Claude.Gate.TurnState
   , sanitiseSession
   , ensureStateDir
   , resetState
+  , turnStillLive
+  , abandonIfTurnReset
+  , writeTurnText
   , claimReviewStack
   , flagExists
   , writeFlag
@@ -23,16 +26,18 @@ module Claude.Gate.TurnState
   , removeIfExists
   ) where
 
-import Control.Monad (when)
+import Control.Monad (unless, when)
 
 import Data.ByteString.Char8 qualified as ByteString
 import Data.Char (isAsciiLower, isAsciiUpper, isDigit, isSpace)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
-import System.Directory (createDirectoryIfMissing, doesFileExist, getFileSize, removeFile, removePathForcibly, renameFile)
+import Data.Text.IO qualified as TextIO
+import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getFileSize, removeFile, removePathForcibly, renameFile)
 import System.Environment (lookupEnv)
-import System.FilePath ((</>))
+import System.Exit (exitSuccess)
+import System.FilePath (takeDirectory, (</>))
 import Text.Read (readMaybe)
 
 -- | Every state file for one session. Grouping them keeps the on-disk layout in
@@ -130,13 +135,55 @@ claimReviewStack paths = do
     then renameFile (reviewStack paths) (claimedStack paths) >> pure True
     else pure False
 
+-- | Whether the turn this Stop belongs to still exists: its state directory
+-- is present. The UserPromptSubmit reset removes the directory the moment
+-- the next prompt arrives, which can happen while a Stop-gate phase is still
+-- waiting on its nested reviewer (a critique takes minutes; a user does not).
+turnStillLive :: TurnPaths -> IO Bool
+turnStillLive paths = doesDirectoryExist (stateDir paths)
+
+-- | End the gate quietly when the turn was reset under it. A Stop whose turn
+-- has been superseded by a new prompt has nothing left to block or approve:
+-- the worker is already on the next turn, and any verdict from the old one
+-- would land on state that no longer exists.
+--
+-- Decision: exit 0 with nothing on stdout, rather than recreate the state
+-- directory or let the write fail. Writing into a recreated directory would
+-- plant this turn's done/approved flags into the NEXT turn, whose first Stop
+-- would then skip the phase it never had (a silently uncritiqued turn). Letting
+-- the write fail is what happened on 18 sep 2026: "critique-done: withFile:
+-- does not exist", surfaced to the user as a hook error for a turn that was
+-- already over. Called by each phase right after its nested reviewer returns,
+-- which is where the wait, and so the race, lives.
+abandonIfTurnReset :: TurnPaths -> IO ()
+abandonIfTurnReset paths = do
+  live <- turnStillLive paths
+  unless live exitSuccess
+
 -- | Whether a marker/flag file is present.
 flagExists :: FilePath -> IO Bool
 flagExists = doesFileExist
 
--- | Create an empty marker file (the shell @: > flag@).
+-- | Create an empty marker file (the shell @: > flag@). Dropped when the
+-- turn's directory is gone, see 'writeTurnFile'.
 writeFlag :: FilePath -> IO ()
-writeFlag path = writeFile path ""
+writeFlag path = writeTurnFile path ""
+
+-- | Write a text state file (the critic's previous challenges). Dropped when
+-- the turn's directory is gone, see 'writeTurnFile'.
+writeTurnText :: FilePath -> Text -> IO ()
+writeTurnText path contents = do
+  live <- doesDirectoryExist (takeDirectory path)
+  when live (TextIO.writeFile path contents)
+
+-- | Write a state file, unless the turn's directory has been reset away in
+-- the meantime; then the turn is over and the write is dropped (the same
+-- reasoning as 'abandonIfTurnReset', for the writes that are not directly
+-- behind a nested reviewer). Never recreates the directory.
+writeTurnFile :: FilePath -> String -> IO ()
+writeTurnFile path contents = do
+  live <- doesDirectoryExist (takeDirectory path)
+  when live (writeFile path contents)
 
 -- | Read an integer counter file, defaulting to 0 when absent or unparseable.
 readCounter :: FilePath -> IO Int
@@ -155,7 +202,7 @@ readCounter path = do
       pure (fromMaybe 0 (readMaybe (filter (not . isSpace) (ByteString.unpack contents))))
 
 writeCounter :: FilePath -> Int -> IO ()
-writeCounter path n = writeFile path (show n)
+writeCounter path n = writeTurnFile path (show n)
 
 -- | Read an editmark, distinguishing "no mark written yet" (Nothing) from a
 -- recorded count: a phase only treats an unchanged stack as a shrug when it
