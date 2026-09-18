@@ -62,8 +62,10 @@ import Claude.Gate.TurnState
   , readCounter
   , readMark
   , stackLineCount
+  , abandonIfTurnReset
   , writeCounter
   , writeFlag
+  , writeTurnText
   )
 import System.Directory (doesFileExist)
 
@@ -231,6 +233,7 @@ runCriticOnDossier session paths edits currentMark claims = do
       reviewer = Reviewer model False timeoutSecs repo
       prompt = critiquePrompt (critiqueAnchor budget history) previous claims diffs
   result <- runNested reviewer prompt
+  abandonIfTurnReset paths
   case result of
     NestedBroken exitCode emptyOut stderrText -> do
       surfaceNestedFailure session "critique" model exitCode emptyOut stderrText (critiqueBroke paths)
@@ -250,7 +253,7 @@ handleChallenge paths model output currentMark budget = do
     then do
       -- Record this challenge and the stack size it was based on. No new edits
       -- before the next Stop reads as a shrug; new edits earn a fresh critique.
-      TextIO.writeFile (critiquePrev paths) output
+      writeTurnText (critiquePrev paths) output
       writeCounter (critiqueEditmark paths) currentMark
       blockAndExit (BlockReason (critiqueBlockReason model budget output))
     else

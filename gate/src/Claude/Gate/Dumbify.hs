@@ -26,6 +26,7 @@ import Claude.Gate.Repo (repoForFiles)
 import Claude.Gate.ReviewPrompt (maxDiffPromptChars)
 import Claude.Gate.TurnState
   ( TurnPaths (dumbifyApproved, dumbifyBroke, dumbifyDone, dumbifyEditmark, dumbifyRound, reviewStack)
+  , abandonIfTurnReset
   , fileNonEmpty
   , flagExists
   , readCounter
@@ -71,6 +72,7 @@ runDumbifyRound session paths currentMark thisRound maxRounds = do
   let reviewer = Reviewer model True timeoutSecs repo
       prompt = dumbifyPrompt (renderDiffs edits) fullFiles
   result <- runNested reviewer prompt
+  abandonIfTurnReset paths
   case result of
     NestedBroken exitCode emptyOut stderrText -> do
       surfaceNestedFailure session "dumbify canary" model exitCode emptyOut stderrText (dumbifyBroke paths)

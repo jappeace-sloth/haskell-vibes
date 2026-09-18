@@ -23,6 +23,7 @@ import Claude.Gate.ReviewerBackend (ReviewPhase (RuleReviewer), reviewModel)
 import Claude.Gate.ReviewPrompt (buildReviewPrompt, hasViolations, reviewBlockReason)
 import Claude.Gate.TurnState
   ( TurnPaths (claimedStack, reviewApproved, reviewBroke, reviewStack)
+  , abandonIfTurnReset
   , claimReviewStack
   , fileNonEmpty
   , removeIfExists
@@ -59,6 +60,7 @@ reviewClaimed session paths model = do
   let reviewer = Reviewer model True timeoutSecs Nothing
       prompt = buildReviewPrompt corpus (renderDiffs edits) fullFiles
   result <- runNested reviewer prompt
+  abandonIfTurnReset paths
   case result of
     NestedBroken exitCode emptyOut stderrText -> do
       -- Do not lose the diffs: return them to the stack so the next Stop

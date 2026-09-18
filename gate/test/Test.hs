@@ -26,13 +26,23 @@ import Claude.Gate.RecordEdit (SkipReason (..), pathSkipReason)
 import Claude.Gate.ReviewPrompt (hasViolations)
 import Claude.Gate.SpawnAnnotation (annotateSpawn)
 import Claude.Gate.Transcript (turnAssistantText)
-import Claude.Gate.TurnState (readCounter, writeCounter)
+import Claude.Gate.TurnState
+  ( TurnPaths (critiqueDone, critiquePrev, critiqueRound, stateDir)
+  , ensureStateDir
+  , flagExists
+  , readCounter
+  , resetState
+  , turnPaths
+  , writeCounter
+  , writeFlag
+  , writeTurnText
+  )
 import Claude.Gate.WorkingHours (amsterdamTimeZone, workingHoursWarning)
 import Data.Time (TimeOfDay (TimeOfDay), UTCTime (UTCTime), fromGregorian, timeOfDayToTime, timeZoneMinutes)
 import Hedgehog (Gen, Property, forAll, property, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
-import System.Directory (getTemporaryDirectory)
+import System.Directory (doesDirectoryExist, getTemporaryDirectory)
 import System.Environment (getProgName)
 import System.Exit (exitFailure)
 import OpenCodeReviewTest qualified
@@ -254,6 +264,25 @@ counterTests =
         writeCounter path (previous + 1)
         final <- readCounter path
         final @?= 2
+    -- The UserPromptSubmit reset can wipe the turn directory while a Stop
+    -- phase is still waiting on its reviewer (18 sep 2026: "critique-done:
+    -- withFile: does not exist"). Writes that land after the reset must be
+    -- dropped, not fail, and must not recreate the directory: a recreated
+    -- directory would carry this turn's flags into the next turn.
+    , testCase "state writes after a turn reset are dropped without resurrecting the turn" $ do
+        paths <- turnPaths "gate-reset-unit-test"
+        ensureStateDir paths
+        writeFlag (critiqueDone paths)
+        resetState paths
+        writeFlag (critiqueDone paths)
+        writeCounter (critiqueRound paths) 1
+        writeTurnText (critiquePrev paths) "CHALLENGE: stale"
+        stillThere <- doesDirectoryExist (stateDir paths)
+        stillThere @?= False
+        done <- flagExists (critiqueDone paths)
+        done @?= False
+        round1 <- readCounter (critiqueRound paths)
+        round1 @?= 0
     ]
 
 -- The critique claims-extraction end to end: write a transcript file and ask the
