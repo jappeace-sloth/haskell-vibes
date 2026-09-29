@@ -45,7 +45,11 @@ reviewModel phase = do
   case backend of
     ClaudeCode -> case phase of
       ComplexityCanary -> envStr "CLAUDE_DUMBIFY_MODEL" "claude-haiku-4-5"
-      AdversarialCritic -> envStr "CLAUDE_CRITIQUE_MODEL" "claude-opus-4-8"
+      -- Decision: the critic defaults to the current Opus (5.5 since 2026-09-29).
+      -- It leads Fable 5.1 on every published coding and review benchmark at
+      -- $4/$20 per MTok, cheaper than the Opus 4.8 it replaces. Fable was
+      -- considered and rejected: 2.5x the price for no measured review gain.
+      AdversarialCritic -> envStr "CLAUDE_CRITIQUE_MODEL" "claude-opus-5-5"
       RuleReviewer -> envStr "CLAUDE_REVIEWER_MODEL" "claude-sonnet-5"
     OpenCode -> do
       inherited <- envStr "OPENCODE_GATE_MODEL" ""
