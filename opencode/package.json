@@ -7,8 +7,8 @@
     "test": "node --test test/*.test.js"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "1.18.30",
-    "@opencode-ai/sdk": "1.18.30",
+    "@opencode-ai/plugin": "1.18.31",
+    "@opencode-ai/sdk": "1.18.31",
     "@types/node": "24.10.1",
     "typescript": "5.9.3"
   }
