@@ -73,8 +73,8 @@ let
   # Decision: opencode's model catalogue (models.dev) comes from a pinned
   # checkout of the models.dev repo, built through nixpkgs' own models-dev
   # package with the source swapped for the npins pin. The nixpkgs snapshot
-  # is only refreshed when a maintainer bumps it (2026-08-31 in this pin,
-  # predating gpt-6-astra), while the catalogue changes weekly; the pin is
+  # is only refreshed when a maintainer bumps it (2026-09-22 in this pin,
+  # same day as Opus 5.5), while the catalogue changes weekly; the pin is
   # refreshed with `npins update models-dev` like every other pin here.
   # The file is baked into the image at /etc/opencode/models.json and the
   # launcher points OPENCODE_MODELS_PATH at it with opencode's own fetch
