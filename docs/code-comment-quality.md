@@ -15,8 +15,8 @@ For Claude, adopt an information-value check and a brevity checkpoint: ordinary
 implementation comments should normally be one or two sentences. A longer comment
 must earn its space with a concrete contract, invariant, constraint, or explanation
 of non-obvious behaviour. Remove redundant prose before removing useful knowledge.
-The proposed wording appears below; the sentence budget is a local policy choice,
-not a scientifically established limit.
+The rule is recorded in [CLAUDE.md](../CLAUDE.md#code-comments); the sentence budget
+is a local policy choice, not a scientifically established limit.
 
 ## Scope and evidence
 
@@ -26,7 +26,8 @@ outside its scope. External design documents matter only when deciding where an
 explanation belongs.
 
 This is a targeted review of primary project guidance, an author's published
-argument, and one empirical study, rather than a systematic literature review.
+argument, one empirical study, and concrete GHC source Notes, rather than a
+systematic literature review.
 Sources were selected for explicit guidance on comment content, length, placement,
 and maintenance, including evidence against simply banning long comments. All
 linked sources were read on the research date. Recommendations below are a
@@ -100,12 +101,17 @@ A correct comment today needs to stay correct after a code change. PEP 8 makes
 updating comments an explicit priority.[^pep8] Review touched comments with the
 code, including restrictions that a proposed change may invalidate.[^review]
 
-Describe the current constraint and consequence. GHC distinguishes a comment that
-describes a state from a commit message that describes a change. It allows
-historical material when clearly signposted and relevant, and specifically
-preserves design reasoning that prevents later mistakes.[^ghc] For Claude, the
-application is to keep enduring rationale while removing the debugging diary,
-the conversation with the user, and recaps of what the agent just changed.
+GHC distinguishes a comment that describes a state from a commit message that
+describes a change. It allows historical material when clearly signposted and
+relevant, and specifically preserves design reasoning that prevents later
+mistakes.[^ghc] This does not require narrating the code or prohibit explanations
+drawn from debugging.
+
+Our application is to retain relevant history, failed approaches, and debugging
+findings when they explain a constraint or prevent a mistake. The fuller change
+narrative belongs in commit messages, where it does not interrupt source reading.
+This is the user's local editorial preference, informed by GHC's distinction;
+the comment-length checkpoint does not apply to commit messages.
 
 ## How short should comments be?
 
@@ -135,7 +141,7 @@ comments can indicate missing external architecture or domain documentation.
 Comment volume alone cannot tell us whether the explanation is useful or correctly
 placed.[^study]
 
-Our proposed default is therefore one or two sentences for an ordinary
+Our recommended default is therefore one or two sentences for an ordinary
 implementation comment, with a review checkpoint above three prose lines at the
 file's normal wrapping width. These numbers are deliberately a local restraint on
 verbosity. Passing the checkpoint means checking what would be lost by shortening,
@@ -153,14 +159,44 @@ relevant Haskell precedent: a named `Note [Topic]` with precise references from
 the affected code. The name makes the explanation findable and reusable without
 copying it. GHC also recommends examples and specific ticket references.[^ghc]
 
-Our recommendation is to retain a short local statement of the important constraint
+Our recommendation is to use short references at the relevant code sites
 and point to one named Note or version-controlled design document for the longer
 argument. A proof or delicate invariant may belong in the source; a system-wide
 design discussion may belong in `docs/`. Choose by who needs the information and
 where it can be maintained together, rather than moving prose solely to pass a
 line-count check.[^cpp][^ghc][^study]
 
-## Examples for the proposed rule
+### What GHC Notes actually explain
+
+The following source examples were checked at GHC revision
+`234bab081682018da7d04b22eee4b80f70381d07`. They show the distinction between
+explaining a design and paraphrasing source statements:
+
+- `Note [Implementing unsafeCoerce]` starts with the failure mechanism: floating
+  an unsafe coercion outside a runtime type check would make it execute before
+  its justification. It explains how equality evidence constrains that movement,
+  then connects the library definition to special treatment in compiler passes.
+  Its numbered wrinkles include why strictness analysis must be disabled here.
+  The pragma and definition refer back to the relevant part of the Note. This
+  preserves reasoning about correctness across several moving parts.[^ghc-unsafe]
+- `Note [Finding join points]` explains the division of responsibility: occurrence
+  analysis marks eligible bindings, while the simplifier or `simpleOptPgm` changes
+  their identity. It gives the reason for that split: one analysis pass, while
+  preserving the ability to distinguish calls from jumps at occurrences. The
+  fields it names connect that model to the implementation.[^ghc-occurrence]
+- `Note [Recursive bindings: the grand plan]` outlines the analysis stages and
+  their purposes, including preserving scope and choosing loop breakers so that
+  inlining terminates. It references the relevant functions and more detailed
+  Notes. This is an algorithm overview, not a translation of each expression into
+  prose.[^ghc-occurrence]
+
+These Notes do discuss concrete transformations and implementation mechanisms.
+Their value is the higher-level account of the problem, design, invariants, and
+interactions that those details support. Our rule should preserve that account
+and its examples, rather than encourage descriptions of obvious code or impose
+the short inline-comment budget on a substantive Note.[^ghc-unsafe][^ghc-occurrence]
+
+## Examples for the rule
 
 These are illustrative examples written for this report, not quotations or claims
 about behaviour in this repository. Their factual premises must be verified before
@@ -219,33 +255,12 @@ existing [Decision Log rule](../CLAUDE.md#decision-log). A longer argument can l
 in one named Note if it is needed; repeating the whole design discussion at every
 queue operation adds no value.[^cpp][^ghc]
 
-## Proposed CLAUDE.md wording
+## CLAUDE.md rule
 
-This is a proposal for a subsequent rule change. It applies to comments written
-or modified during a task, including declaration documentation. The brevity
-checkpoint applies specifically to ordinary implementation comments.
-
-```markdown
-# Code comments
-- Every comment must add information the intended reader needs: a reason,
-  contract, invariant, constraint, or explanation of non-obvious behaviour.
-  Delete narration of obvious code and repetition of names or types.
-- Prefer clearer names, types, or structure when they remove the need for an
-  explanation. Do not refactor merely to eliminate a useful comment.
-- Ordinary implementation comments should normally be one or two sentences.
-  Above three prose lines at normal wrapping width, stop and try to shorten.
-  Keep extra detail only when removing it loses necessary information; do not
-  split the same explanation into smaller comments to evade this check.
-- Preserve needed API documentation, examples, proofs, and subtle invariants.
-  Put substantial shared reasoning in one named Note or design document, with
-  a short local constraint and precise reference. Retain required legal and
-  tool-directive comments.
-- Describe the current code and verify factual claims. Update affected comments
-  with code changes. Keep task recaps and debugging diaries out of source.
-- Before finishing, review added and changed comments: remove every sentence
-  whose deletion loses no useful information. Keep significant Decision:
-  comments to the choice, relevant alternatives, and decisive reason.
-```
+The [Code comments section in CLAUDE.md](../CLAUDE.md#code-comments) contains the
+rule. It applies to comments written or modified during a task, including
+declaration documentation. The brevity checkpoint applies specifically to ordinary
+implementation comments.
 
 This makes the requested stop measure a mandatory editing checkpoint. A future
 automated reviewer should identify the redundant claim and suggest a deletion or
@@ -253,11 +268,11 @@ shorter wording, rather than fail a comment solely for crossing the threshold.
 That implementation recommendation follows the evidence limitations above; it
 has not been tested as an agent intervention.
 
-The proposal complements the existing instruction to document confusing functions
-at their declarations and retains the Decision Log requirement. When integrating
-it, cross-reference these rules so the agent does not read them as competing
-demands for extra prose. Required legal text and tool directives are excluded from
-the editorial deletion test because they serve obligations beyond explanation;
+The rule complements the instruction to document missing contracts or rationale
+at function declarations and retains the Decision Log requirement. Both
+instructions cross-reference the comment rules. Required legal text and tool
+directives are excluded from the editorial deletion test because they serve
+obligations beyond explanation;
 the study likewise distinguishes copyright comments from explanatory ones.[^study]
 
 Success should be assessed on reviewed changes: fewer redundant sentences, while
@@ -281,3 +296,7 @@ the rule's effectiveness has already been demonstrated.[^study]
 [^ghc]: GHC developers, [Coding Style, section 2, Using Notes](https://gitlab.haskell.org/ghc/ghc/-/wikis/commentary/coding-style#2-using-notes), particularly sections 2.1–2.4. Primary Haskell project guidance. Covers named explanations, precise references, examples, and current-state descriptions versus change history.
 
 [^study]: Daniela Steidl, Benjamin Hummel, and Elmar Juergens, [“Quality Analysis of Source Code Comments”](https://www.cqse.eu/fileadmin/content/news/publications/2013-quality-analysis-of-source-code-comments.pdf) (2013), author-hosted paper. Section V (PDF p. 4) defines coherence, usefulness, completeness, and consistency. Sections VI-B and VII (pp. 5–8) describe the length hypotheses, sampling, 16-person survey, and results. Sections VIII–IX (pp. 8–10) discuss placement, quantity metrics, case studies, and the limits of semi-automatic assessment. The survey measures developer judgements, not comprehension speed or defect reduction.
+
+[^ghc-unsafe]: GHC source, [`GHC.Internal.Unsafe.Coerce`, Note [Implementing unsafeCoerce], lines 30–244](https://github.com/ghc/ghc/blob/234bab081682018da7d04b22eee4b80f70381d07/libraries/ghc-internal/src/GHC/Internal/Unsafe/Coerce.hs#L30-L244). The pragma reference is at lines 1–4; the definition's reference to wrinkle U5 is at lines 254–258. Primary implementation evidence, pinned to the inspected revision.
+
+[^ghc-occurrence]: GHC source, `GHC.Core.Opt.OccurAnal`, [Note [Recursive bindings: the grand plan], lines 413–452](https://github.com/ghc/ghc/blob/234bab081682018da7d04b22eee4b80f70381d07/compiler/GHC/Core/Opt/OccurAnal.hs#L413-L452), and [Note [Finding join points], lines 814–830](https://github.com/ghc/ghc/blob/234bab081682018da7d04b22eee4b80f70381d07/compiler/GHC/Core/Opt/OccurAnal.hs#L814-L830). Primary implementation evidence, pinned to the inspected revision.
