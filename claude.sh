@@ -205,8 +205,10 @@ launch_docker() {
     if [ "$VANILLA" -eq 0 ]; then
         cp -a "$(pwd)/CLAUDE.md" "$CONFIG_SNAPSHOT/CLAUDE.md"
         cp -a "$(pwd)/skills" "$CONFIG_SNAPSHOT/skills"
+        cp -a "$(pwd)/docs" "$CONFIG_SNAPSHOT/docs"
         CONFIG_MOUNTS+=("-v" "$CONFIG_SNAPSHOT/CLAUDE.md:/home/claude/.claude/CLAUDE.md")
         CONFIG_MOUNTS+=("-v" "$CONFIG_SNAPSHOT/skills:/home/claude/.claude/skills")
+        CONFIG_MOUNTS+=("-v" "$CONFIG_SNAPSHOT/docs:/home/claude/.claude/docs:ro")
     fi
 
     # Harness-specific mounts: opencode's read-only config and its state dir.
@@ -365,16 +367,9 @@ launch_nspawn() {
     touch "$RUNTIME_ROOT/home/claude/.claude.json"
     touch "$RUNTIME_ROOT/home/claude/.config/opencode/opencode.json"
 
-    # Snapshot the read-only config group (CLAUDE.md, skills, character) into a
-    # private per-launch copy and mount THOSE, instead of binding the live
-    # $(pwd) paths. Those dirs are shared by every machine launched from this
-    # checkout and can be emptied or changed on the host mid-session (a git
-    # checkout, another instance): a swapped CLAUDE.md/skills/character changes
-    # behaviour underfoot. The snapshot lives outside the rootfs so the agent
-    # cannot reach it to edit its own config. The Stop gate itself is no longer
-    # mounted: it is the claude-gate binary baked into the image (see
-    # default.nix), so it cannot be disabled by a vanished mount. character is
-    # mounted even in vanilla mode, so it is always snapshotted.
+    # Snapshot configuration outside the rootfs so host checkouts cannot change
+    # a running session's instructions or referenced docs. Character is included
+    # in vanilla mode too; the Stop gate binary comes from the image.
     CONFIG_SNAPSHOT="/tmp/claude-config.${INSTANCE_NAME}.$$"
     mkdir -p "$CONFIG_SNAPSHOT"
     cp -a "$(pwd)/character" "$CONFIG_SNAPSHOT/character"
@@ -383,13 +378,15 @@ launch_nspawn() {
     # entry we can't reach, leave it; /tmp clears on reboot anyway.
     trap 'rm -rf "$RUNTIME_ROOT" "$CONFIG_SNAPSHOT" 2>/dev/null || true' EXIT
 
-    # Vanilla mode skips the project's CLAUDE.md, skills and hooks mounts.
+    # Vanilla mode skips the project's CLAUDE.md, docs, skills and hooks mounts.
     CONFIG_BINDS=()
     if [ "$VANILLA" -eq 0 ]; then
         cp -a "$(pwd)/CLAUDE.md" "$CONFIG_SNAPSHOT/CLAUDE.md"
         cp -a "$(pwd)/skills" "$CONFIG_SNAPSHOT/skills"
+        cp -a "$(pwd)/docs" "$CONFIG_SNAPSHOT/docs"
         CONFIG_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/CLAUDE.md:/home/claude/.claude/CLAUDE.md")
         CONFIG_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/skills:/home/claude/.claude/skills")
+        CONFIG_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/docs:/home/claude/.claude/docs")
     fi
 
     # Harness-specific binds: opencode's read-only config and its state dir.
