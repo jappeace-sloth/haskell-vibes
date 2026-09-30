@@ -189,6 +189,13 @@ Clone repos there so all instances can access them.
 Skills in `skills/` teach the agent project conventions (Haskell style, CI, testing, etc.).
 Tell it to write new skills if it keeps making the same mistake.
 
+### Reference documentation
+Both launchers snapshot `docs/` alongside `CLAUDE.md` and mount it read-only at
+`/home/claude/.claude/docs`. This keeps relative documentation links in
+`~/.claude/CLAUDE.md` usable, including `docs/code-comment-quality.md`.
+The snapshot stays fixed for the session; relaunch to pick up changes.
+Like the project instructions and skills, this mount is skipped with `--vanilla`.
+
 ### Platform support
 Linux only — `systemd-nspawn` is part of systemd and has no macOS equivalent.
 
