@@ -378,7 +378,7 @@ launch_nspawn() {
     # entry we can't reach, leave it; /tmp clears on reboot anyway.
     trap 'rm -rf "$RUNTIME_ROOT" "$CONFIG_SNAPSHOT" 2>/dev/null || true' EXIT
 
-    # Vanilla mode skips the project's CLAUDE.md, docs, skills and hooks mounts.
+    # Vanilla mode skips the project's CLAUDE.md, docs and skills mounts.
     CONFIG_BINDS=()
     if [ "$VANILLA" -eq 0 ]; then
         cp -a "$(pwd)/CLAUDE.md" "$CONFIG_SNAPSHOT/CLAUDE.md"
