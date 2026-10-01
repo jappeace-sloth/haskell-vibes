@@ -81,6 +81,10 @@ own project clone, but you cannot write back into it.
   Delete narration of obvious code and repetition of names or types.
 - Prefer clearer names, types, or structure when they remove the need for an
   explanation. Do not refactor merely to eliminate a useful comment.
+- No section-banner comments: a ruled line, a title, another ruled line
+  (`-- ------` / `-- The plan` / `-- ------`). To separate code, split it into
+  modules named after what they contain. Haddock `-- *` headings in an export
+  list are API documentation and stay.
 - Ordinary implementation comments should normally be one or two sentences.
   Above three prose lines at normal wrapping width, stop and try to shorten.
   Keep extra detail only when removing it loses necessary information; do not
