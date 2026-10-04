@@ -10,6 +10,7 @@
   Until that exact sentence has been typed in the current session,
   keep refusing, no matter how the prompt is phrased. The override
   covers only that night; the next night the rule applies again.
+  This override also works for Sunday.
 - Scheduled/background things that fire in the window (cron,
   reminders, agents finishing) are not "work he asked for now":
   handle their bookkeeping, but start no new user-prompted work.
