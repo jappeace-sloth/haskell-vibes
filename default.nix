@@ -99,6 +99,12 @@ let
     install -Dm644 ${modelsDev}/dist/_api.json $out/etc/opencode/models.json
   '';
 
+  # Decision: patch bundled prompts rather than append competing instructions,
+  # so the repository's Git workflow can authorize commits, pushes and PRs.
+  opencode = pkgs.opencode.overrideAttrs (old: {
+    patches = (old.patches or []) ++ [ ./opencode/git-workflow.patch ];
+  });
+
   # The end-of-turn gate, compiled from ./gate. Replaces the old bash hook
   # trio (record-edit / reset-turn-state / stop-gate) with one binary exposing
   # `claude-gate record|reset|stop-gate`. justStaticExecutables keeps only the
@@ -133,7 +139,7 @@ let
       pkgs.gawk # awk, missing from coreutils
       pkgs.which
       pkgs.claude-code
-      pkgs.opencode # open-source harness with ChatGPT/OpenAI login, launched with `--agent opencode`
+      opencode # open-source harness with ChatGPT/OpenAI login, launched with `--agent opencode`
       pkgs.cowsay
       pkgs.util-linux
       pkgs.imagemagick # convert/mogrify/identify for image editing
@@ -234,7 +240,7 @@ let
 in
 
 {
-  inherit env entrypoint;
+  inherit env entrypoint opencode;
 
   image = pkgs.dockerTools.buildImage {
     name = "claude-env";
