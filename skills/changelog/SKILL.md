@@ -94,19 +94,31 @@ caught a real error in crypton's 2.x changelog (October 2026):
    confirm each with `gh pr view N`.  A PR closed on GitHub but landed as a
    direct commit has no number in the log; match it by subject.
 2. "No API change" needs an API diff.  Crypton 2.0.0 said "No exported
-   function changed its signature"; the diff found two.  For Haskell use
-   [scripts/hs-signature-diff.py](scripts/hs-signature-diff.py):
+   function changed its signature"; the diff found two, and two constructors
+   added to `CryptoError` where the changelog named one.  For Haskell, diff
+   what Haddock says the package exports with
+   [scripts/hs-api-diff.py](scripts/hs-api-diff.py):
 
    ```bash
-   ~/.claude/skills/changelog/scripts/hs-signature-diff.py vOLD vNEW [REPO_DIR]
+   # two releases, fetched from Hackage
+   ~/.claude/skills/changelog/scripts/hs-api-diff.py crypton-2.0.0 crypton-2.1.7
+   # the last release against the working tree
+   cabal haddock --haddock-hoogle   # writes dist-newstyle/.../doc/html/PKG/PKG.txt
+   ~/.claude/skills/changelog/scripts/hs-api-diff.py PKG-1.3.0 dist-newstyle/build/*/*/PKG-*/doc/html/PKG/PKG.txt
    ```
 
-   It reports removed modules, removed exports and changed signatures of
-   exported top-level functions, ignoring doc comments and explicit foralls.
-   It does not see data constructors, class methods or CPP.  Other
-   ecosystems have tools for this (cargo-semver-checks, japicmp,
-   api-extractor).  A signature diff cannot see behaviour breaks such as
-   input that is now refused; those come from reading the PRs.
+   Because it reads Haddock's output rather than the source, it sees
+   re-exports, operators, modules without an export list, constructors,
+   record fields, class methods and instances.  It reports REMOVED and
+   CHANGED entities and ADDED CONSTRUCTOR on an existing type (breaks
+   matches without a wildcard).  Instances are matched without module
+   qualifiers, because docs from different GHC versions qualify classes
+   differently; a removal still lowers the count and is reported.  Hackage
+   has no docs for a release whose build failed (crypton 2.1.3 and 2.1.4),
+   and the script stops with an error rather than reporting nothing.  Other
+   ecosystems have their own tools (cargo-semver-checks, japicmp,
+   api-extractor).  No API diff sees behaviour breaks such as input that is
+   now refused; those come from reading the PRs.
 3. Read the PR body for anything that touches security or breaks callers;
    titles undersell.  "reject missing and oversized authentication tags"
    turned out to mean a zero-length tag had skipped authentication entirely.
