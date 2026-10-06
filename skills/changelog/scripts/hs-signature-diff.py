@@ -26,22 +26,25 @@ FORALL = re.compile(r"\bforall\b[^.]*\.\s*")
 SIGNATURE_START = re.compile(r"^([a-z_][\w']*(?:\s*,\s*[a-z_][\w']*)*)\s*$|^([a-z_][\w']*(?:\s*,\s*[a-z_][\w']*)*)\s*::")
 
 
-def git_show(repo, ref, path):
+def git_show(repo: str, ref: str, path: str) -> str | None:
     result = subprocess.run(["git", "-C", repo, "show", f"{ref}:{path}"],
                             capture_output=True, text=True)
     return result.stdout if result.returncode == 0 else None
 
 
-def cabal_file(repo, ref):
+def cabal_file(repo: str, ref: str) -> str:
     listing = subprocess.run(["git", "-C", repo, "ls-tree", "--name-only", ref],
                              capture_output=True, text=True, check=True).stdout.split()
     cabals = [name for name in listing if name.endswith(".cabal")]
     if len(cabals) != 1:
         sys.exit(f"expected one .cabal file at the root of {ref}, found {cabals}")
-    return git_show(repo, ref, cabals[0])
+    cabal = git_show(repo, ref, cabals[0])
+    if cabal is None:
+        sys.exit(f"could not read {cabals[0]} at {ref}")
+    return cabal
 
 
-def cabal_field_values(cabal, field):
+def cabal_field_values(cabal: str, field: str) -> list[str]:
     """Every value of a cabal field, across all stanzas, as one list of words."""
     values = []
     pattern = re.compile(rf"^(\s*){field}:(.*)$", re.I)
@@ -63,7 +66,7 @@ def cabal_field_values(cabal, field):
     return values
 
 
-def module_source(repo, ref, module, source_dirs):
+def module_source(repo: str, ref: str, module: str, source_dirs: list[str]) -> str | None:
     relative = module.replace(".", "/") + ".hs"
     # The dirs come from every stanza, and a library without hs-source-dirs
     # means ".", so "." is always tried last.
@@ -75,10 +78,11 @@ def module_source(repo, ref, module, source_dirs):
     return None
 
 
-def exports_and_signatures(source):
+def exports_and_signatures(source: str) -> tuple[set[str] | None, dict[str, str]]:
     """The export list (None when the module exports everything) and signatures."""
     code = LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", source))
     header = re.search(r"^module\s+[\w.]+\s*\((.*?)\)\s*where", code, re.S | re.M)
+    # No trailing \b: there is no word boundary after a prime, so it would read drop' as drop.
     exports = set(re.findall(r"(?<![\w'])[a-zA-Z_][\w']*", header.group(1))) if header else None
     signatures = {}
     lines = code.split("\n")
@@ -103,7 +107,7 @@ def exports_and_signatures(source):
     return exports, signatures
 
 
-def main():
+def main() -> None:
     if len(sys.argv) not in (3, 4):
         sys.exit(__doc__)
     old_ref, new_ref = sys.argv[1], sys.argv[2]
