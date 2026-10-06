@@ -68,9 +68,9 @@ The existing `CLAUDE_*_MODEL` overrides apply only to Claude Code reviewers.
   outside CLAUDE.md's rest windows (22:45-07:00
   NL, or Sunday) the gate injects one warning per turn ("warning outside
   working hours, see claude.md") and the worker decides what to do with
-  it. The Amsterdam clock is computed from the EU DST rule in code because
-  the containers ship no zoneinfo and a named TZ silently falls back to
-  UTC. Disable with `CLAUDE_SKIP_HOURS_CHECK=1`.
+  it. The Amsterdam clock is computed from the EU DST rule in code, so it
+  stays right even without zoneinfo, where a named TZ silently falls back
+  to UTC. Disable with `CLAUDE_SKIP_HOURS_CHECK=1`.
 - The complexity canary explains changed code for the worker to judge. New edits
   trigger another explanation; no new edits indicate acceptance.
 - The adversarial critic checks both edits and claims, including turns with no

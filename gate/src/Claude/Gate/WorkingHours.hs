@@ -11,14 +11,13 @@
 -- or apply the override rule from CLAUDE.md).
 --
 -- Decision: the Amsterdam clock is computed from the EU DST rule in
--- code instead of via @TZ=Europe/Amsterdam@. The containers ship no
--- zoneinfo database, and a named zone without zoneinfo silently falls
--- back to UTC: exactly that lie made the worker report 20:53 while it
--- was 22:55 (9 sep 2026). The EU rule (CEST between 01:00 UTC on the
--- last Sunday of March and 01:00 UTC on the last Sunday of October) is
--- three lines and cannot fail soft. Alternative considered: shipping
--- tzdata in the image; rejected as a heavier fix for the same three
--- lines, and the gate would still lie if the package went missing.
+-- code instead of via @TZ=Europe/Amsterdam@. A named zone without
+-- zoneinfo silently falls back to UTC: before the image shipped tzdata
+-- (6 okt 2026), that lie made the worker report 20:53 while it was
+-- 22:55 (9 sep 2026). The EU rule (CEST between 01:00 UTC on the last
+-- Sunday of March and 01:00 UTC on the last Sunday of October) is three
+-- lines and cannot fail soft, so the gate keeps it although the image
+-- now ships tzdata: it stays right if that package goes missing.
 module Claude.Gate.WorkingHours
   ( runWorkingHours
   , workingHoursWarning

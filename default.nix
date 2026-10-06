@@ -227,6 +227,12 @@ let
     # die with "/usr/bin/env: bad interpreter".
     mkdir -p $out/usr/bin
     ln -s ${pkgs.coreutils}/bin/env $out/usr/bin/env
+
+    # glibc looks up a named TZ (TZ=Europe/Amsterdam) in /usr/share/zoneinfo and
+    # silently falls back to UTC without it, which put instances two hours behind
+    # NL time. Plain `date` already worked via nspawn's host /etc/localtime.
+    mkdir -p $out/usr/share
+    ln -s ${pkgs.tzdata}/share/zoneinfo $out/usr/share/zoneinfo
   '')
     ];
     pathsToLink = [ "/" ];
