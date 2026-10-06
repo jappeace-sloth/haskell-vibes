@@ -8,19 +8,24 @@ OLD and NEW are each either a Hoogle file, as written by
 Hoogle file Hackage built for that release.
 
 The Hoogle file is Haddock's record of what every exposed module exports,
-so this sees re-exports, operators, modules without an export list,
-constructors, record fields, classes, associated types and instances.  It
-reports REMOVED and CHANGED entities, which break callers, and ADDED
+so this sees single re-exported names, operators, modules without an export
+list, constructors, record fields, classes, associated types and instances.
+It reports REMOVED and CHANGED entities, which break callers, ADDED
 CONSTRUCTOR on an existing type, which breaks a pattern match that has no
-wildcard.  Instances are compared without module qualifiers, counting
+wildcard, and ADDED METHOD on an existing class, which breaks instances
+unless the method has a default (the file does not say; check the source).
+A method is recognised as a signature right after its class line whose
+first constraint is that class.  Instances are compared without module qualifiers, counting
 how many share each unqualified form: Haddock files an instance under the
 module it picks for the type, and docs built by different GHC versions
 qualify classes differently (GHC.Show.Show, GHC.Internal.Show.Show).  A
 removal lowers the count and is reported; qualifier-only differences are
-summed up in one line.  It cannot
-see behaviour changes (input that is now refused, errors that arrive
-differently) or whether a new class method has a default; those come from
-reading the changes themselves.
+summed up in one line.
+
+Not in the Hoogle file, so not seen: a whole re-exported module (`module X`
+in an export list), which of two same-named types a signature refers to
+(signatures are printed unqualified), type family instances, and behaviour
+changes such as input that is now refused.
 """
 import re
 import sys
@@ -90,23 +95,40 @@ def normalize(declaration: str) -> str:
     return declaration
 
 
-def parse_api(text: str) -> tuple[Modules, set[str]]:
-    """Each module's entities, and the package's instances, which Haddock files
-    under whichever module it picks for the type."""
+def first_constraint_class(declaration: str) -> str | None:
+    signature = declaration.split(" :: ", 1)[1] if " :: " in declaration else ""
+    if "=>" not in signature:
+        return None
+    context = signature.split("=>", 1)[0].strip().lstrip("(").split()
+    return context[0] if context else None
+
+
+def parse_api(text: str) -> tuple[Modules, set[str], dict[tuple[str, str], str]]:
+    """Each module's entities, the package's instances, which Haddock files
+    under whichever module it picks for the type, and which values are class
+    methods: Haddock prints a class's methods right after the class line."""
     modules: Modules = {}
     instances: set[str] = set()
-    module = None
+    methods: dict[tuple[str, str], str] = {}
+    module, current_class = None, None
     for declaration in logical_lines(text):
         if declaration.startswith("module "):
-            module = declaration.split()[1]
+            module, current_class = declaration.split()[1], None
             modules[module] = {}
         elif declaration.startswith("instance "):
             instances.add(normalize(declaration))
         elif module is None:
             sys.exit(f"declaration before any module line: {declaration}")
         else:
-            modules[module][declaration_key(declaration)] = normalize(declaration)
-    return modules, instances
+            key = declaration_key(declaration)
+            modules[module][key] = normalize(declaration)
+            if key[0] == "class":
+                current_class = key[1]
+            elif key[0] == "value" and current_class and first_constraint_class(declaration) == current_class:
+                methods[(module, key[1])] = current_class
+            else:
+                current_class = None
+    return modules, instances, methods
 
 
 def result_type(signature: str) -> str:
@@ -156,8 +178,8 @@ def instance_changes(old_instances: set[str], new_instances: set[str]) -> tuple[
 def main() -> None:
     if len(sys.argv) != 3:
         sys.exit(__doc__)
-    old_api, old_instances = parse_api(read_hoogle(sys.argv[1]))
-    new_api, new_instances = parse_api(read_hoogle(sys.argv[2]))
+    old_api, old_instances, _ = parse_api(read_hoogle(sys.argv[1]))
+    new_api, new_instances, new_methods = parse_api(read_hoogle(sys.argv[2]))
     breaking = 0
     for module in sorted(old_api):
         if module not in new_api:
@@ -174,6 +196,11 @@ def main() -> None:
                 breaking += 1
         for line in added_constructors(module, old_entities, new_entities):
             print(line)
+        for key in sorted(set(new_entities) - set(old_entities)):
+            owner = new_methods.get((module, key[1]))
+            if key[0] == "value" and owner and ("class", owner) in old_entities:
+                print(f"ADDED METHOD {module}: {new_entities[key]} "
+                      "(breaks instances unless it has a default; check the source)")
     removed_instances, removed_count, qualifier_only = instance_changes(old_instances, new_instances)
     for line in removed_instances:
         print(line)
@@ -184,7 +211,8 @@ def main() -> None:
     added = sorted(set(new_api) - set(old_api))
     if added:
         print(f"added modules: {', '.join(added)}")
-    print(f"{breaking} breaking change(s) across {len(set(old_api) & set(new_api))} common modules")
+    print(f"{breaking} breaking change(s) across {len(set(old_api) & set(new_api))} common modules; "
+          "not checked: whole-module re-exports, same-named types, type family instances, behaviour")
 
 
 if __name__ == "__main__":

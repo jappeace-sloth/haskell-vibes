@@ -108,17 +108,34 @@ caught a real error in crypton's 2.x changelog (October 2026):
    ```
 
    Because it reads Haddock's output rather than the source, it sees
-   re-exports, operators, modules without an export list, constructors,
-   record fields, class methods and instances.  It reports REMOVED and
-   CHANGED entities and ADDED CONSTRUCTOR on an existing type (breaks
-   matches without a wildcard).  Instances are matched without module
-   qualifiers, because docs from different GHC versions qualify classes
-   differently; a removal still lowers the count and is reported.  Hackage
-   has no docs for a release whose build failed (crypton 2.1.3 and 2.1.4),
-   and the script stops with an error rather than reporting nothing.  Other
-   ecosystems have their own tools (cargo-semver-checks, japicmp,
-   api-extractor).  No API diff sees behaviour breaks such as input that is
-   now refused; those come from reading the PRs.
+   single re-exported names, operators, modules without an export list,
+   constructors, record fields, class methods and instances.  It reports
+   REMOVED and CHANGED entities, ADDED CONSTRUCTOR on an existing type
+   (breaks matches without a wildcard) and ADDED METHOD on an existing
+   class (breaks instances unless it has a default, which you check in the
+   source).  Instances are matched without module qualifiers, because docs
+   from different GHC versions qualify classes differently; a removal still
+   lowers the count and is reported.  Hackage has no docs for a release
+   whose build failed (crypton 2.1.3 and 2.1.4), and the script stops with
+   an error rather than reporting nothing.
+
+   The Hoogle file does not record four things, and the script's last line
+   says so every time: a whole re-exported module, which of two same-named
+   types a signature means (signatures are printed unqualified), type
+   family instances, and behaviour.  For the first, compare the `module X`
+   entries in the export lists at both tags:
+
+   ```bash
+   reexports() { git grep -E '^\s+[(,]?\s*module [A-Z][A-Za-z0-9_.]*\s*[,)]?\s*$' "$1" -- '*.hs' \
+     | sed -E "s|^$1:||; s|:\s*[(,]?\s*(module [A-Za-z0-9_.]+).*|: \1|" | sort -u; }
+   comm -3 <(reexports vOLD) <(reexports vNEW)
+   ```
+
+   For the others, read the source diff of the types and type instances
+   the summary makes claims about.  Other ecosystems have their own tools
+   (cargo-semver-checks, japicmp, api-extractor).  No API diff sees
+   behaviour breaks such as input that is now refused; those come from
+   reading the PRs.
 3. Read the PR body for anything that touches security or breaks callers;
    titles undersell.  "reject missing and oversized authentication tags"
    turned out to mean a zero-length tag had skipped authentication entirely.
