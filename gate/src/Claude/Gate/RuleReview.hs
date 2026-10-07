@@ -17,10 +17,11 @@ import Claude.Gate.DiffRender (renderDiffs)
 import Claude.Gate.EditStack (readEdits, returnClaimedToStack, stackFilePaths)
 import Claude.Gate.FileContext (renderFullFiles)
 import Claude.Gate.GateConfig (envInt, phaseDisabled)
-import Claude.Gate.HookProtocol (BlockReason (BlockReason), blockAndExit)
+import Claude.Gate.HookProtocol (BlockReason (BlockReason))
 import Claude.Gate.NestedReviewer (NestedResult (NestedBroken, NestedOutput), Reviewer (Reviewer), runNested, surfaceNestedFailure)
 import Claude.Gate.ReviewerBackend (ReviewPhase (RuleReviewer), reviewModel)
 import Claude.Gate.ReviewPrompt (buildReviewPrompt, hasViolations, reviewBlockReason)
+import Claude.Gate.SummaryReprint (blockWithFindings)
 import Claude.Gate.TurnState
   ( TurnPaths (claimedStack, reviewApproved, reviewBroke, reviewStack)
   , abandonIfTurnReset
@@ -70,5 +71,5 @@ reviewClaimed session paths model = do
     NestedOutput output -> do
       removeIfExists (claimedStack paths)
       if hasViolations output
-        then blockAndExit (BlockReason (reviewBlockReason model output))
+        then blockWithFindings paths (BlockReason (reviewBlockReason model output))
         else writeFlag (reviewApproved paths)

@@ -42,7 +42,7 @@ import Data.Text.IO qualified as TextIO
 import Claude.Gate.DiffRender (renderDiffs)
 import Claude.Gate.EditStack (readEdits, stackFilePaths)
 import Claude.Gate.GateConfig (envInt, phaseDisabled)
-import Claude.Gate.HookProtocol (BlockReason (BlockReason), blockAndExit)
+import Claude.Gate.HookProtocol (BlockReason (BlockReason))
 import Claude.Gate.NestedReviewer
   ( GateFailure (GateFailure, failureBlockReason, failureHeadline, failureLogBody, failureUserNotice)
   , NestedResult (NestedBroken, NestedOutput)
@@ -54,6 +54,7 @@ import Claude.Gate.NestedReviewer
 import Claude.Gate.Repo (commitHistory, repoForFilesOrCwd)
 import Claude.Gate.ReviewerBackend (ReviewPhase (AdversarialCritic), reviewModel)
 import Claude.Gate.ReviewPrompt (maxDiffPromptChars)
+import Claude.Gate.SummaryReprint (blockWithFindings)
 import Claude.Gate.Transcript (turnAssistantText)
 import Claude.Gate.TurnState
   ( TurnPaths (critiqueApproved, critiqueBroke, critiqueDone, critiqueEditmark, critiquePrev, critiqueRound, reviewStack)
@@ -255,7 +256,7 @@ handleChallenge paths model output currentMark budget = do
       -- before the next Stop reads as a shrug; new edits earn a fresh critique.
       writeTurnText (critiquePrev paths) output
       writeCounter (critiqueEditmark paths) currentMark
-      blockAndExit (BlockReason (critiqueBlockReason model budget output))
+      blockWithFindings paths (BlockReason (critiqueBlockReason model budget output))
     else
       -- Round cap reached: stop debating without marking approved (the concern
       -- is unresolved), and let rule review proceed.

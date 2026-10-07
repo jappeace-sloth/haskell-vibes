@@ -114,18 +114,22 @@ else {
       model: { providerID: "fixture", modelID: "fixture" },
       parts: [{ type: "text", text: "Reply briefly." }],
     });
+    // The real gate follows its critic's challenge with one summary-reprint
+    // block, so the worker stops three times; the fixture gate blocks once.
+    const stops = realGate ? 3 : 2;
     let calls;
     for (let attempt = 0; attempt < 600; attempt += 1) {
       calls = (await readFile(join(temporary, "calls"), "utf8")).trim().split("\n");
-      if (calls.filter((command) => command === "stop-gate").length >= 2) break;
+      if (calls.filter((command) => command === "stop-gate").length >= stops) break;
       await new Promise((accept) => setTimeout(accept, 50));
     }
-    assert.deepEqual(calls, ["reset", "stop-gate", "stop-gate"], output);
+    assert.deepEqual(calls, ["reset", ...Array(stops).fill("stop-gate")], output);
     const messages = await requestJSON(`${address}/session/${session.id}/message`);
-    assert.equal(messages.filter(({ info }) => info.role === "assistant" && info.finish === "stop").length, 2);
+    assert.equal(messages.filter(({ info }) => info.role === "assistant" && info.finish === "stop").length, stops);
     assert.ok(messages.some(({ parts }) => parts.some((part) => part.synthetic && (realGate
       ? part.text?.includes("CHALLENGE: fixture reviewer found a problem.")
       : part.text === "Explain the result again after review."))));
+    if (realGate) assert.ok(messages.some(({ parts }) => parts.some((part) => part.synthetic && part.text?.includes("Reprint your final summary"))));
   } catch (error) {
     throw new Error(`${error.message}\nOpenCode output:\n${output}`, { cause: error });
   } finally {

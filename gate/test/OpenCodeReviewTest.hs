@@ -5,6 +5,7 @@ module OpenCodeReviewTest (tests, runFixture, runGate) where
 import Control.Monad (forM_, when)
 import Claude.Gate.RecordEdit (recordEdit)
 import Claude.Gate.StopGate (runStopGate)
+import Claude.Gate.SummaryReprint (summaryReprintReason)
 import Data.Aeson (FromJSON, ToJSON, Value (Object, String, Array, Number, Bool, Null), eitherDecode, encode, object, (.=))
 import Data.Aeson.Key (Key)
 import Data.Aeson.Key qualified as Key
@@ -44,6 +45,7 @@ tests = testGroup "OpenCode reviewer backend"
   [ testCase "OpenAI workers use Terra Fast for canary, Luna for rules, and the worker for critique" (allPhases [])
   , testCase "per-phase models do not inherit an incompatible worker variant" (allPhases
       [("OPENCODE_DUMBIFY_MODEL", "openai/canary"), ("OPENCODE_CRITIQUE_MODEL", "openai/critic"), ("OPENCODE_REVIEWER_MODEL", "openai/rules")])
+  , testCase "a turn no reviewer blocked clears without a summary reprint" cleanTurnWithoutReprint
   , testCase "invalid rule-review configuration leaves edits queued" invalidRuleModel
   , testCase "a provider error cannot approve a turn despite exit zero" (failedReview "error")
   , testCase "malformed JSON cannot approve a turn" (failedReview "malformed")
@@ -120,9 +122,12 @@ allPhases overrides = withFixture overrides $ \fixture -> do
   recordCode fixture
   canary <- stopGate fixture
   jsonAt ["decision"] canary @?= Just (String "block")
-  verdict <- stopGate fixture
+  reprint <- stopGate fixture
   -- Preliminary commentary and tool output contain findings; only the last
-  -- completed step says OK, and only that step may determine approval.
+  -- completed step says OK, and only that step may determine approval. The
+  -- canary's block buried the worker's summary, so the passing Stop asks for it.
+  jsonAt ["reason"] reprint @?= Just (String summaryReprintReason)
+  verdict <- stopGate fixture
   jsonAt ["decision"] verdict @?= Nothing
   jsonAt ["systemMessage"] verdict @?= Just (String "gate clear: dumbify critique rules")
   calls <- readCalls fixture
@@ -176,6 +181,13 @@ readCalls fixture = Bytes.readFile (fixtureDirectory fixture </> "calls") >>= tr
 decodeOrFail :: FromJSON value => Bytes.ByteString -> IO value
 decodeOrFail encoded = either (ioError . userError) pure (eitherDecode encoded)
 
+-- | Without a reviewer block the worker's summary is already its last message.
+cleanTurnWithoutReprint :: Assertion
+cleanTurnWithoutReprint = withFixture [] $ \fixture -> do
+  verdict <- stopGate fixture
+  jsonAt ["decision"] verdict @?= Nothing
+  jsonAt ["systemMessage"] verdict @?= Just (String "gate clear: critique")
+
 invalidRuleModel :: Assertion
 invalidRuleModel = withFixture [("OPENCODE_REVIEWER_MODEL", "")] $ \fixture -> do
   recordCode fixture
@@ -196,6 +208,9 @@ failedReview failure = withFixture [("REVIEW_FAILURE", failure)] $ \fixture -> d
   when (failure == "error") $
     assertBool "provider error survives into feedback" ("Fixture login expired" `isInfixOf` Bytes.unpack (encode verdict))
   doesFileExist (fixtureDirectory fixture </> "claude-turn-state/test/critique-approved") >>= (@?= False)
+  -- A broken reviewer is a notice, not review feedback: no reprint follows.
+  (_status, afterNotice, _diagnostic) <- invokeGate fixture "stop-gate" (stopPayload fixture)
+  afterNotice @?= ""
 
 -- | The user submits the next prompt while a reviewer is still running: the
 -- reset wipes the turn directory under the gate. The gate must then end with

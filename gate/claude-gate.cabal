@@ -98,6 +98,7 @@ library
       Claude.Gate.Dumbify
       Claude.Gate.Critique
       Claude.Gate.RuleReview
+      Claude.Gate.SummaryReprint
       Claude.Gate.StopGate
   other-modules:
       Paths_claude_gate

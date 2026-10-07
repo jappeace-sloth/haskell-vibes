@@ -17,7 +17,7 @@ The binary reads one hook JSON object on stdin and dispatches on its argument.
 | ------------------- | ------------ | ------------------------------------------------------------------- |
 | `claude-gate record` | PostToolUse  | Append the edit to the per-turn review stack (filters binaries etc.) |
 | `claude-gate reset`  | UserPromptSubmit | Wipe the previous turn's per-turn state                          |
-| `claude-gate stop-gate` | Stop      | Working hours, complexity canary, critique, then rule review         |
+| `claude-gate stop-gate` | Stop      | Working hours, complexity canary, critique, rule review, then summary reprint |
 
 `../opencode/stopgate.ts` adapts OpenCode's prompt, edit, and idle events to the
 same protocol. Its `ApplyPatch` records carry the tool's per-file unified diff,
@@ -80,6 +80,11 @@ The existing `CLAUDE_*_MODEL` overrides apply only to Claude Code reviewers.
   plus the skills matching the touched file types). Violations block the Stop
   with the findings so the main-loop model can fix or rebut, and the loop
   repeats until clean.
+- The summary reprint runs once the three phases pass. If any of them blocked
+  with feedback this turn, the worker's summary now sits above the review
+  exchange, so the gate blocks once more and asks the worker to reprint it,
+  updated, as its last message. That Stop spawns no reviewer. Infrastructure
+  failures and the working-hours warning do not ask for a reprint.
 
 Disable the corresponding phase with `CLAUDE_SKIP_DUMBIFY=1`,
 `CLAUDE_SKIP_CRITIQUE=1`, or `CLAUDE_SKIP_RULE_CHECK=1` under either backend.

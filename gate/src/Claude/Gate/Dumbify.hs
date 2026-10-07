@@ -19,11 +19,12 @@ import Claude.Gate.DiffRender (renderDiffs)
 import Claude.Gate.EditStack (readEdits, stackFilePaths, stackHasCode)
 import Claude.Gate.FileContext (renderFullFiles)
 import Claude.Gate.GateConfig (envInt, phaseDisabled)
-import Claude.Gate.HookProtocol (BlockReason (BlockReason), blockAndExit)
+import Claude.Gate.HookProtocol (BlockReason (BlockReason))
 import Claude.Gate.NestedReviewer (NestedResult (NestedBroken, NestedOutput), Reviewer (Reviewer), runNested, surfaceNestedFailure)
 import Claude.Gate.ReviewerBackend (ReviewPhase (ComplexityCanary), reviewModel)
 import Claude.Gate.Repo (repoForFiles)
 import Claude.Gate.ReviewPrompt (maxDiffPromptChars)
+import Claude.Gate.SummaryReprint (blockWithFindings)
 import Claude.Gate.TurnState
   ( TurnPaths (dumbifyApproved, dumbifyBroke, dumbifyDone, dumbifyEditmark, dumbifyRound, reviewStack)
   , abandonIfTurnReset
@@ -82,7 +83,7 @@ runDumbifyRound session paths currentMark thisRound maxRounds = do
       -- next Stop can tell whether the larger model simplified.
       writeCounter (dumbifyRound paths) thisRound
       writeCounter (dumbifyEditmark paths) currentMark
-      blockAndExit (BlockReason (dumbifyBlockReason model thisRound maxRounds output))
+      blockWithFindings paths (BlockReason (dumbifyBlockReason model thisRound maxRounds output))
 
 dumbifyPrompt :: Text -> Text -> Text
 dumbifyPrompt renderedDiffs fullFiles =
