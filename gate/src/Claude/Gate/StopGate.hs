@@ -16,8 +16,10 @@
 --
 -- Each phase may block the Stop (emit a reason and exit); later phases only run
 -- on a Stop that no earlier phase blocked. The phases converge across the turn's
--- repeated Stops via per-phase flags on tmpfs. When every phase that ran cleared
--- without blocking, a non-blocking "gate clear" notice names them.
+-- repeated Stops via per-phase flags on tmpfs. Once they all pass, a turn in
+-- which any reviewer blocked gets one more block asking the worker to reprint
+-- its summary (see "Claude.Gate.SummaryReprint"). When every phase that ran
+-- cleared without blocking, a non-blocking "gate clear" notice names them.
 module Claude.Gate.StopGate
   ( runStopGate
   ) where
@@ -30,6 +32,7 @@ import Claude.Gate.Critique (runCritique)
 import Claude.Gate.Dumbify (runDumbify)
 import Claude.Gate.HookProtocol (HookEvent (sessionId, transcriptPath), emitSystemMessage, readHookEvent)
 import Claude.Gate.RuleReview (runRuleReview)
+import Claude.Gate.SummaryReprint (requestSummaryReprint)
 import Claude.Gate.WorkingHours (runWorkingHours)
 import Claude.Gate.TurnState
   ( TurnPaths (critiqueApproved, dumbifyApproved, reviewApproved)
@@ -48,6 +51,7 @@ runStopGate = do
   runDumbify (sessionId event) paths
   runCritique (sessionId event) (transcriptPath event) paths
   runRuleReview (sessionId event) paths
+  requestSummaryReprint paths
   emitGateClear paths
 
 -- | Every phase that ran this turn concluded without blocking (a block would
