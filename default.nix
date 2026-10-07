@@ -99,11 +99,7 @@ let
     install -Dm644 ${modelsDev}/dist/_api.json $out/etc/opencode/models.json
   '';
 
-  # Decision: patch bundled prompts rather than append competing instructions,
-  # so the repository's Git workflow can authorize commits, pushes and PRs.
-  opencode = pkgs.opencode.overrideAttrs (old: {
-    patches = (old.patches or []) ++ [ ./opencode/git-workflow.patch ];
-  });
+  opencode = import ./opencode/package.nix { inherit pkgs; };
 
   # The end-of-turn gate, compiled from ./gate. Replaces the old bash hook
   # trio (record-edit / reset-turn-state / stop-gate) with one binary exposing
