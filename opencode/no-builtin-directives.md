@@ -12,9 +12,12 @@ three changes.
    format, failure modes) and lose the behavioural advice: the shell tool's Git
    and GitHub section, "prefer the dedicated tools", "use Task for open-ended
    searches", "never create documentation files", emoji rules, the todo list's
-   usage rules, and similar.
-3. `skill/index.ts` no longer registers the built-in `customize-opencode`
-   skill, so the skill list holds only skills the user installed.
+   usage rules, and similar. The `general` and `explore` subagent
+   descriptions (listed in the task tool, in both `agent/agent.ts` and the
+   v2 `core/src/plugin/agent.ts`) lose their "use this when" advice.
+3. Neither `skill/index.ts` nor the v2 plugin list in
+   `core/src/plugin/internal.ts` registers the built-in `customize-opencode`
+   skill, so the skill lists hold only skills the user installed.
 
 What still reaches the model:
 
@@ -37,7 +40,8 @@ Git policy now comes only from `CLAUDE.md`.
 `test/system-prompt.js` runs the patched server against a recording provider
 fixture and checks the request: the system prompt starts with the environment
 block, contains `~/.claude/CLAUDE.md` and lists no skills the fixture did not
-install, and no tool description mentions committing. `check.nix` runs it in CI.
+install, the v2 skill registry is empty too, and no tool description mentions
+committing. `check.nix` runs it in CI.
 
 Build the patched package independently of the container:
 

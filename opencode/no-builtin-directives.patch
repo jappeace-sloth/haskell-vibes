@@ -1,3 +1,66 @@
+diff --git a/packages/core/src/plugin/agent.ts b/packages/core/src/plugin/agent.ts
+index 915df79..1c956f8 100644
+--- a/packages/core/src/plugin/agent.ts
++++ b/packages/core/src/plugin/agent.ts
+@@ -151,14 +151,14 @@ export const Plugin = define({
+ 
+       draft.update(AgentV2.ID.make("general"), (item) => {
+         item.description =
+-          "General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel."
++          "General-purpose agent for researching complex questions and executing multi-step tasks."
+         item.mode = "subagent"
+         item.permissions.push(...PermissionV2.merge(defaults, [{ action: "todowrite", resource: "*", effect: "deny" }]))
+       })
+ 
+       draft.update(AgentV2.ID.make("explore"), (item) => {
+         item.description =
+-          'Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. "src/components/**/*.tsx"), search code for keywords (eg. "API endpoints"), or answer questions about the codebase (eg. "how do API endpoints work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "very thorough" for comprehensive analysis across multiple locations and naming conventions.'
++          'Fast agent specialized for exploring codebases: finding files by pattern, searching code for keywords and answering questions about the codebase. It adapts its search to a thoroughness level stated in the prompt: "quick", "medium" or "very thorough".'
+         item.system = PROMPT_EXPLORE
+         item.mode = "subagent"
+         item.permissions.push(
+diff --git a/packages/core/src/plugin/internal.ts b/packages/core/src/plugin/internal.ts
+index d4ab71c..3891365 100644
+--- a/packages/core/src/plugin/internal.ts
++++ b/packages/core/src/plugin/internal.ts
+@@ -31,7 +31,6 @@ import { AgentPlugin } from "./agent"
+ import { CommandPlugin } from "./command"
+ import { ModelsDevPlugin } from "./models-dev"
+ import { ProviderPlugins } from "./provider"
+-import { SkillPlugin } from "./skill"
+ import { VariantPlugin } from "./variant"
+ 
+ export type Requirements =
+@@ -110,7 +109,6 @@ const layer = Layer.effectDiscard(
+         yield* add(ConfigReferencePlugin.Plugin)
+         yield* add(AgentPlugin.Plugin)
+         yield* add(CommandPlugin.Plugin)
+-        yield* add(SkillPlugin.Plugin)
+         yield* add(ModelsDevPlugin)
+         yield* add(ConfigAgentPlugin.Plugin)
+         yield* add(ConfigCommandPlugin.Plugin)
+diff --git a/packages/opencode/src/agent/agent.ts b/packages/opencode/src/agent/agent.ts
+index 536a642..ce9ae72 100644
+--- a/packages/opencode/src/agent/agent.ts
++++ b/packages/opencode/src/agent/agent.ts
+@@ -181,7 +181,7 @@ const layer = Layer.effect(
+           },
+           general: {
+             name: "general",
+-            description: `General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.`,
++            description: `General-purpose agent for researching complex questions and executing multi-step tasks.`,
+             permission: Permission.merge(
+               defaults,
+               Permission.fromConfig({
+@@ -210,7 +210,7 @@ const layer = Layer.effect(
+               }),
+               user,
+             ),
+-            description: `Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. "src/components/**/*.tsx"), search code for keywords (eg. "API endpoints"), or answer questions about the codebase (eg. "how do API endpoints work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "very thorough" for comprehensive analysis across multiple locations and naming conventions.`,
++            description: `Fast agent specialized for exploring codebases: finding files by pattern, searching code for keywords and answering questions about the codebase. It adapts its search to a thoroughness level stated in the prompt: "quick", "medium" or "very thorough".`,
+             prompt: PROMPT_EXPLORE,
+             options: {},
+             mode: "subagent",
 diff --git a/packages/opencode/src/session/llm/request.ts b/packages/opencode/src/session/llm/request.ts
 index e000d6c..fcdbc3a 100644
 --- a/packages/opencode/src/session/llm/request.ts

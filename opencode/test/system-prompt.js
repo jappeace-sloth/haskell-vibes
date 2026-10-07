@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 const userInstruction = "Fixture instruction: answer in Dutch.";
+const userSkill = "fixture-skill";
 
 function recordingProvider(requests) {
   return async (request, response) => {
@@ -44,10 +45,12 @@ test("OpenCode sends the user's instructions without bundled directives", { time
   let server;
   let output = "";
   try {
+    const configDirectory = join(temporary, "config", "opencode");
+    await mkdir(join(configDirectory, "skills", userSkill), { recursive: true });
+    await writeFile(join(configDirectory, "skills", userSkill, "SKILL.md"),
+      `---\nname: ${userSkill}\ndescription: Fixture skill installed by the user.\n---\nFixture skill body.\n`);
     // Same offline dependency setup as server-smoke.js: no npm registry in the sandbox.
     if (process.env.OPENCODE_TEST_NODE_MODULES) {
-      const configDirectory = join(temporary, "config", "opencode");
-      await mkdir(configDirectory, { recursive: true });
       await symlink(process.env.OPENCODE_TEST_NODE_MODULES, join(configDirectory, "node_modules"));
       await copyFile(new URL("../package.json", import.meta.url), join(configDirectory, "package.json"));
       await copyFile(new URL("../package-lock.json", import.meta.url), join(configDirectory, "package-lock.json"));
@@ -102,8 +105,15 @@ test("OpenCode sends the user's instructions without bundled directives", { time
     // block; with the patch the environment block comes first.
     assert.match(system, /^You are powered by the model named fixture\b/);
     assert.ok(system.includes(userInstruction), system);
-    // The fixture installs no skills, so any listed skill came with OpenCode.
-    assert.doesNotMatch(system, /<skill>/);
+    assert.deepEqual([...system.matchAll(/<name>(.*)<\/name>/g)].map((match) => match[1]), [userSkill]);
+    // The TUI and the v2 session runner read a separate skill registry, which
+    // loads asynchronously; the user's skill appearing marks it as loaded.
+    let v2Skills = [];
+    for (let attempt = 0; attempt < 200 && !v2Skills.includes(userSkill); attempt += 1) {
+      await new Promise((accept) => setTimeout(accept, 50));
+      v2Skills = (await requestJSON(`${address}/api/skill?directory=${encodeURIComponent(temporary)}`)).data.map((skill) => skill.name);
+    }
+    assert.deepEqual(v2Skills, [userSkill]);
     // Git policy comes only from the user's instructions (jappeace/vibes#124).
     for (const tool of turn.tools) {
       assert.doesNotMatch(tool.function.description, /commit/i, tool.function.name);
