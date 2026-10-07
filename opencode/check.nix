@@ -1,6 +1,7 @@
 { pkgs, claudeGate }:
 let
   package = pkgs.lib.importJSON ./package.json;
+  opencode = import ./package.nix { inherit pkgs; };
   # Decision: typecheck against the published SDK matching the image's OpenCode
   # version, with npm integrity hashes imported into Nix. Handwritten API stubs
   # would hide upstream changes; type-only imports need no runtime dependencies.
@@ -15,11 +16,11 @@ let
     filter = path: _type: baseNameOf path != "node_modules";
   };
 in
-assert package.devDependencies."@opencode-ai/plugin" == pkgs.opencode.version;
-assert package.devDependencies."@opencode-ai/sdk" == pkgs.opencode.version;
+assert package.devDependencies."@opencode-ai/plugin" == opencode.version;
+assert package.devDependencies."@opencode-ai/sdk" == opencode.version;
 pkgs.runCommand "ci-opencode-stopgate"
   {
-    nativeBuildInputs = [ pkgs.nodejs pkgs.opencode pkgs.coreutils ];
+    nativeBuildInputs = [ pkgs.nodejs opencode pkgs.coreutils ];
     CLAUDE_GATE_TEST_BINARY = "${claudeGate}/bin/claude-gate";
     OPENCODE_TEST_NODE_MODULES = "${nodeModules}/node_modules";
   } ''
@@ -29,6 +30,6 @@ pkgs.runCommand "ci-opencode-stopgate"
   cd opencode
   npm run typecheck
   npm test
-  node --test test/server-smoke.js
+  node --test test/server-smoke.js test/system-prompt.js
   touch $out
 ''
