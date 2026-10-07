@@ -39,9 +39,9 @@ Git policy now comes only from `CLAUDE.md`.
 
 `test/system-prompt.js` runs the patched server against a recording provider
 fixture and checks the request: the system prompt starts with the environment
-block, contains `~/.claude/CLAUDE.md` and lists no skills the fixture did not
-install, the v2 skill registry is empty too, and no tool description mentions
-committing. `check.nix` runs it in CI.
+block and contains `~/.claude/CLAUDE.md`, the one skill the fixture installs is
+the only skill in both the system prompt and the v2 registry, and no tool
+description mentions committing. `check.nix` runs it in CI.
 
 Build the patched package independently of the container:
 
