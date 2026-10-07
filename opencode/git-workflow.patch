@@ -1,0 +1,24 @@
+diff --git a/packages/opencode/src/tool/shell/shell.txt b/packages/opencode/src/tool/shell/shell.txt
+--- a/packages/opencode/src/tool/shell/shell.txt
++++ b/packages/opencode/src/tool/shell/shell.txt
+@@ -14,1 +14,1 @@
+-- Only commit, amend, push, or create PRs when explicitly requested.
++- Follow the repository's Git workflow instructions, including branching, committing, pushing, and creating or updating PRs. Standing instructions in CLAUDE.md or AGENTS.md authorize these steps without a separate request each turn. Amend commits only when explicitly requested.
+diff --git a/packages/opencode/src/session/prompt/default.txt b/packages/opencode/src/session/prompt/default.txt
+--- a/packages/opencode/src/session/prompt/default.txt
++++ b/packages/opencode/src/session/prompt/default.txt
+@@ -76,1 +76,1 @@
+-NEVER commit changes unless the user explicitly asks you to. It is VERY IMPORTANT to only commit when explicitly asked, otherwise the user will feel that you are being too proactive.
++Follow the repository's Git workflow instructions. Standing instructions in CLAUDE.md or AGENTS.md authorize branching, committing, pushing, and creating or updating PRs without a separate request each turn.
+diff --git a/packages/opencode/src/session/prompt/trinity.txt b/packages/opencode/src/session/prompt/trinity.txt
+--- a/packages/opencode/src/session/prompt/trinity.txt
++++ b/packages/opencode/src/session/prompt/trinity.txt
+@@ -78,1 +78,1 @@
+-NEVER commit changes unless the user explicitly asks you to. It is VERY IMPORTANT to only commit when explicitly asked, otherwise the user will feel that you are being too proactive.
++Follow the repository's Git workflow instructions. Standing instructions in CLAUDE.md or AGENTS.md authorize branching, committing, pushing, and creating or updating PRs without a separate request each turn.
+diff --git a/packages/opencode/src/session/prompt/beast.txt b/packages/opencode/src/session/prompt/beast.txt
+--- a/packages/opencode/src/session/prompt/beast.txt
++++ b/packages/opencode/src/session/prompt/beast.txt
+@@ -147,1 +147,1 @@
+-You are NEVER allowed to stage and commit files automatically.
++Follow the repository's Git workflow instructions. Standing instructions in CLAUDE.md or AGENTS.md authorize staging and committing intended changes without a separate request each turn.
