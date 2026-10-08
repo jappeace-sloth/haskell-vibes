@@ -58,10 +58,10 @@ The deliverable is the Dutch client-facing text in his voice:
 Same conventions as mail concepts (see the jappie-software
 CLAUDE.md), with the channel named:
 
-- Two files, as in the email-writing skill: the sendable text alone in
-  =projects/<klant>/reply-<datum>-<onderwerp>.md=, everything else in
-  the matching =.notes.md=, including "Kanaal is WhatsApp, dus geen
-  aanhef of ondertekening".
+- Two files, as in the email-writing skill: the sendable text alone
+  in =projects/<klant>/reply-<naam>-<datum>-<onderwerp>.md=, everything
+  else in the matching =.notes.md=, including "Kanaal is WhatsApp, dus
+  geen aanhef of ondertekening".
 - Status CONCEPT until Jappie says it went out, then VERSTUURD with
   the date and "tekst per concept" (he edits while sending; never
   claim a verbatim copy). After sending, note whose move it is
