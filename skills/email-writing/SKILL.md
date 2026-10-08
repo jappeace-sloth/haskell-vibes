@@ -139,6 +139,24 @@ em-dash inside a sentence; use a comma, colon or parenthesis. Do not open
 paragraphs or bullets with bold or italic topic labels; use real headings
 for grouping.
 
+## Two files per draft
+
+Write every draft as two files side by side in the client's project:
+
+- `reply-<naam>-<datum>-<onderwerp>.md` holds only the mail, from the
+  greeting to "Groet, Jappie". No title, status, separator or notes.
+- `reply-<naam>-<datum>-<onderwerp>.notes.md` holds everything else:
+  send status (CONCEPT or verstuurd, with date), recipient, the subject
+  line ("Onderwerp: Re: ..."), attachments and internal notes, plus a
+  link to the draft.
+
+Assume Jappie sends the mail tired or in a bad state of mind. Select all
+and copy in the draft file must yield exactly the mail, so a fat-fingered
+selection cannot leak internal reasoning, unapproved prices or client data
+into the client's inbox. A `---` separator in one file still depends on a
+careful selection, which is why it was replaced (Jappie, 8 October 2026).
+The subject lives in the notes because it is pasted into its own field.
+
 ## Before / after
 
 Draft:
@@ -174,6 +192,8 @@ Before presenting a draft:
   that something was connected. Keep unknown send status explicit internally.
 - Check that practical consequences are explicit: must the client do
   anything, what remains manual, and what is still pending?
+- Check that the draft file starts at the greeting and ends at the sign-off,
+  and that subject, status and notes sit in the `.notes.md` file.
 - If Jappie asks for a review, report gaps without silently editing. If
   he approves an edit, change the canonical draft, not just a chat example.
   In the handoff distinguish proposed wording, saved edits and sent mail.
