@@ -186,8 +186,11 @@ re-encodes the video.
    that stretch without a subtitle and ask the user what was said. A wrong
    name on screen is worse than a gap.
 3. Hand-edit the SRT into readable cues: at least 1.2 s on screen, at most
-   two lines, a `- ` per speaker in a quick exchange, names and words the
-   user has confirmed ("Worsje", "WOD" where whisper wrote "bot").
+   two lines, a `- ` per speaker in a quick exchange, names the user has
+   confirmed ("Worsje"). A disputed word may be filled from context only
+   when the domain makes it near certain, and then it is listed in your
+   reply as a guess: S10 used "placement WOD" where the models heard
+   "placement bot", "placementbord" and "basement wat".
 4. [scripts/srt_to_ass.py](scripts/srt_to_ass.py) `in.srt out.ass` styles
    it: Montserrat Bold 58 px with a black outline at 1280 high, centred at
    about two thirds of the height, above the caption and button areas of
