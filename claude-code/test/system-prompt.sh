@@ -25,7 +25,7 @@ record_turn() {
     local provider=$!
     while [ ! -f "$SCRATCH/port-$1" ]; do
         if ! kill -0 "$provider" 2> /dev/null; then
-            echo "FAIL: recording_provider.py exited before listening:" >&2
+            echo "FATAL: recording_provider.py exited before listening:" >&2
             cat "$SCRATCH/provider-$1.log" >&2
             exit 1
         fi
@@ -43,7 +43,7 @@ record_turn() {
         timeout 120 "${AGENT_COMMAND[@]}" -p "hi" < /dev/null > /dev/null) || claude_status=$?
     kill "$provider"
     if [ "$claude_status" -ne 0 ]; then
-        echo "FAIL: claude exited with status $claude_status (vanilla flag $1)" >&2
+        echo "FATAL: claude exited with status $claude_status (vanilla flag $1)" >&2
         exit 1
     fi
     jq -s 'map(select(.path | startswith("/v1/messages")) | .body | select(.system))
