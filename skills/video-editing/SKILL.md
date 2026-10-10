@@ -19,9 +19,11 @@ parts exactly, and tell the user which judgements only they can make: taste,
 pacing, whether music enters in the middle of a word.
 
 Distilled from the S10 placement reel (10 Oct 2026): 22 minutes of a CrossFit
-workout cut to a 65 s reel in four versions. The user rejected two picked
+workout cut to a 65 s reel in five versions. The user rejected two picked
 songs, then asked for the song the gym was already playing; that version was
-accepted because "the transition works really well".
+accepted because "the transition works really well". Subtitles were
+forgotten until the end ("for those who play this on mute"): plan them in
+from the start.
 
 ## Tools
 
@@ -30,11 +32,12 @@ All from nixpkgs; nothing needs to be on PATH beforehand.
 | Need | Package | Notes |
 |---|---|---|
 | cut, filter, encode | `ffmpeg` | plain ffmpeg has drawtext; ffmpeg-full is not needed |
-| speech to text | `whisper-cpp` | model: `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin` |
+| speech to text | `whisper-cpp` | models from `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/`: `ggml-large-v3-turbo-q5_0.bin`, plus `ggml-large-v3-q5_0.bin` as a second opinion for subtitles |
 | beats, onsets | `aubio` | binaries are `aubiotrack`, `aubioonset`; there is no `aubio` CLI |
 | which song plays | `songrec` | see scripts/song-id.sh for its TLS setting |
 | analysis scripts | `python3.withPackages(p: [p.numpy])` | building the env needs `nix-shell --max-jobs 4` |
 | bold label font | `oswald` | `nix-store -r $(nix-instantiate '<nixpkgs>' -A oswald)` |
+| subtitle font, burn-in | `montserrat`, ffmpeg's `ass` filter | plain ffmpeg is built with libass |
 
 In this sandbox `TMPDIR` and `/tmp` resolve into `/nix/store`, so `nix-build`
 refuses its GC root; use `nix-store -r $(nix-instantiate ...)` or
@@ -86,14 +89,14 @@ command, with each source time a commented constant and durations computed
 (from the beat grid once there is music). Each segment is its own
 `-ss START -t DURATION+0.5 -i SOURCE` input, joined with `concat` in
 `filter_complex`. Render to `.mkv` with `pcm_s16le` audio, then run the
-loudness pass of section 7 into the final mp4.
+loudness pass of section 8 into the final mp4.
 [reference/example-edl.py](reference/example-edl.py) is the accepted S10 script.
 
 The shape the user liked: the talking intro with only its original audio; the
 hero moment in full with a big label ("80kg", Oswald Bold 170 px, white with
 an 8 px black border, below the athlete and clear of burnt-in watermarks); 2
 bars of each movement; the athlete bent over at the time cap with a 1.2 s fade
-to black. About 60 s.
+to black; burned-in subtitles for everything spoken. About 60 s.
 
 ## 5. Keep audio and video in sync
 
@@ -166,7 +169,36 @@ fits one steady grid and prints `period phase`.
   80 ms fade-in. Say that you cannot hear whether it starts mid-word.
 - If the user wants no added music in the intro, start it at the first cut.
 
-## 7. Loudness
+## 7. Subtitles
+
+Reels get watched on mute, so every spoken line needs subtitles, burned in
+because that works on every platform; a separate SRT only helps where one
+can be uploaded (YouTube). Do them after the picture is locked: burning in
+re-encodes the video.
+
+1. Transcribe the spoken stretch from the video-aligned audio
+   (`aresample=first_pts=0`, section 5) with both large-v3 and turbo,
+   `-bs 5 -ml 36 -sow -osrt` for subtitle-sized segments. They make
+   different mistakes (S10: "Hekken" against "Hacken"), so agreement is
+   the signal.
+2. Where they disagree, re-run that window alone with each; if it still
+   differs per run (S10: "Joost! Ons dode!" against "Goast het"), leave
+   that stretch without a subtitle and ask the user what was said. A wrong
+   name on screen is worse than a gap.
+3. Hand-edit the SRT into readable cues: at least 1.2 s on screen, at most
+   two lines, a `- ` per speaker in a quick exchange, names and words the
+   user has confirmed ("Worsje", "WOD" where whisper wrote "bot").
+4. [scripts/srt_to_ass.py](scripts/srt_to_ass.py) `in.srt out.ass` styles
+   it: Montserrat Bold 58 px with a black outline at 1280 high, centred at
+   about two thirds of the height, above the caption and button areas of
+   Reels and TikTok. It writes ASS because `subtitles=x.srt:force_style=`
+   measures on a 288 px canvas, not in pixels.
+5. Burn in and keep the finished audio:
+   `ffmpeg -i render.mkv -i final.mp4 -map 0:v -map 1:a -vf "ass=out.ass:fontsdir=MONTSERRAT/share/fonts/otf" -c:v libx264 -crf 18 -c:a copy out.mp4`
+6. Deliver the SRT next to the video as `NAME.nl.srt` for platforms with soft
+   subtitles, and list the gaps in your reply.
+
+## 8. Loudness
 
 - `amix` with `normalize=0` sums its inputs and the conversion to s16 then
   clips (measured +0.6 dBTP). Halve the master (`volume=0.5`) in the render.
@@ -175,7 +207,7 @@ fits one steady grid and prints `period phase`.
   reach -14 LUFS, with AAC 192k and `-movflags +faststart`.
 - Music under speech sits 13 to 15 dB below the speech.
 
-## 8. Verify before delivering
+## 9. Verify before delivering
 
 - A 2 fps contact sheet of the whole render, and 10 fps around the hero
   moment to see it fall on its beat.
@@ -184,4 +216,6 @@ fits one steady grid and prints `period phase`.
 - Music position: cross-correlate the render after the cut and after any jump
   against the clean song; expect the planned song time within 20 ms.
 - Speech over music: whisper on the mixed intro should still get the words.
+- Subtitles: a 1 fps contact sheet over the spoken part; each line readable,
+  clear of watermarks, and on screen while it is said.
 - Report duration, LUFS and peak, and list what you could not check.
