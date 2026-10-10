@@ -60,6 +60,10 @@ if [ -n "$OPENCODE_MODEL" ] && [ "$AGENT" != opencode ]; then
     exit 1
 fi
 
+# shellcheck source=agent-command.sh
+. "$(pwd)/agent-command.sh"
+set_agent_command "$AGENT" "$VANILLA"
+
 mkdir -p "../vibes/$INSTANCE_NAME"
 
 # Decision: shared read-only "aanleveringen" (client deliveries) inbox, mounted
@@ -260,7 +264,7 @@ launch_docker() {
         -v "$CONFIG_SNAPSHOT/character":/home/claude/character \
         --rm \
         claude-env:latest \
-        "$AGENT"
+        "${AGENT_COMMAND[@]}"
 }
 
 # ---------------------------------------------------------------------------
@@ -468,7 +472,7 @@ launch_nspawn() {
         --setenv=GH_TOKEN="$(cat ~/.gh_token)" \
         "${REDDIT_SETENV[@]}" \
         "${KVM_BIND[@]}" \
-        "$ENTRYPOINT_PATH" "$AGENT"
+        "$ENTRYPOINT_PATH" "${AGENT_COMMAND[@]}"
 }
 
 # ---------------------------------------------------------------------------

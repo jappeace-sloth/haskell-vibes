@@ -96,6 +96,11 @@ To start any instance without the project's CLAUDE.md and skills mounted, pass `
 ./claude.sh <instance_name> --vanilla
 ```
 
+Configured Claude Code instances start with an empty system prompt (see
+`agent-command.sh`): the model receives Claude Code's one-line identity, the
+tools, `CLAUDE.md`, the skills and the environment block, but none of Claude
+Code's bundled directives. `--vanilla` keeps the stock system prompt.
+
 To run an instance on [opencode](https://opencode.ai) instead of Claude Code
 (for example with a ChatGPT Plus/Pro subscription), pass `--agent opencode`:
 ```
