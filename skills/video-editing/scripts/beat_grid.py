@@ -73,7 +73,10 @@ def pooled_novelty(novelty: np.ndarray) -> np.ndarray:
 
 def fit_grid(novelty: np.ndarray, t0: float, t1: float, coarse: float,
              spread: float, anchor: float | None) -> tuple[float, float]:
-    """The (period, phase) within coarse * (1 +- spread) whose beats hit the most onset energy."""
+    """The (period, phase) within coarse * (1 +- spread) whose beats hit the most onset energy.
+
+    With an anchor only the phase putting a beat on it is tried per period.
+    """
     pooled = pooled_novelty(novelty)
     best = (-1.0, coarse, 0.0)
     for period in np.arange(coarse * (1 - spread), coarse * (1 + spread), 0.0002):
