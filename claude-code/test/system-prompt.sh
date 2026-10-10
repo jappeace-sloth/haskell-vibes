@@ -25,13 +25,20 @@ record_turn() {
     local provider=$!
     while [ ! -f "$SCRATCH/port-$1" ]; do sleep 0.1; done
     set_agent_command claude "$1"
+    # set -e is off inside the $(record_turn ...) substitution, so a claude
+    # crash after its first request has to be caught explicitly.
+    local claude_status=0
     (cd "$SCRATCH/work" && env -u CLAUDE_CONFIG_DIR \
         ANTHROPIC_BASE_URL="http://127.0.0.1:$(cat "$SCRATCH/port-$1")" \
         ANTHROPIC_API_KEY=fixture \
         DISABLE_AUTOUPDATER=1 \
         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
-        timeout 120 "${AGENT_COMMAND[@]}" -p "hi" < /dev/null > /dev/null)
+        timeout 120 "${AGENT_COMMAND[@]}" -p "hi" < /dev/null > /dev/null) || claude_status=$?
     kill "$provider"
+    if [ "$claude_status" -ne 0 ]; then
+        echo "FAIL: claude exited with status $claude_status (vanilla flag $1)" >&2
+        exit 1
+    fi
     jq -s 'map(select(.path | startswith("/v1/messages")) | .body | select(.system))
            | if length == 0 then error("claude sent no /v1/messages request") else .[0] end' \
         "$requests"/*.json
