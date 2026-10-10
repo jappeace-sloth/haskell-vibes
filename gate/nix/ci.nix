@@ -21,6 +21,8 @@ in
     claudeGate = hpkgs.claude-gate;
   };
 
+  claude-code = import ../../claude-code/check.nix { inherit sources; };
+
   # Enforce .hlint.yaml across app/src/test as part of CI, pinned to the same
   # nixpkgs as the rest of the toolchain.
   hlint = pkgs.runCommand "ci-hlint"
