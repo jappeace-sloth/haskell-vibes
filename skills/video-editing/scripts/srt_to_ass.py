@@ -5,7 +5,7 @@ usage: srt_to_ass.py IN.srt OUT.ass [--width 720] [--height 1280] [--font Montse
 burn in: ffmpeg -i in.mp4 -vf "ass=OUT.ass:fontsdir=FONT_DIR" -c:a copy out.mp4
   FONT_DIR: $(nix-store -r $(nix-instantiate '<nixpkgs>' -A montserrat))/share/fonts/otf
 
-ASS instead of `subtitles=x.srt:force_style=...`: SRT is laid out on a 288
+Decision: ASS instead of `subtitles=x.srt:force_style=...`: SRT is laid out on a 288
 pixel high canvas, so sizes in force_style are fractions of 288 rather than
 pixels. Here PlayRes equals the video size and every number is a pixel.
 Placement: Instagram and TikTok cover roughly the bottom fifth with the
