@@ -23,7 +23,14 @@ record_turn() {
     local requests="$SCRATCH/requests-$1"
     python3 "$TEST_DIR/recording_provider.py" "$requests" "$SCRATCH/port-$1" > "$SCRATCH/provider-$1.log" 2>&1 &
     local provider=$!
-    while [ ! -f "$SCRATCH/port-$1" ]; do sleep 0.1; done
+    while [ ! -f "$SCRATCH/port-$1" ]; do
+        if ! kill -0 "$provider" 2> /dev/null; then
+            echo "FAIL: recording_provider.py exited before listening:" >&2
+            cat "$SCRATCH/provider-$1.log" >&2
+            exit 1
+        fi
+        sleep 0.1
+    done
     set_agent_command claude "$1"
     # set -e is off inside the $(record_turn ...) substitution, so a claude
     # crash after its first request has to be caught explicitly.
