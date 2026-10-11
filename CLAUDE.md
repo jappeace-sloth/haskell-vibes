@@ -1,9 +1,11 @@
 
 # Rest
-- No work after 22:45 and before 07:00 (NL time). When a prompt
+This section is to get jappie to sleep. 
+
+- No prompts after 22:45 and before 07:00 (NL time). When a prompt
   arrives in that window: refuse to execute it, tell Jappie to go to
   bed, and do NOT run any tools or start any work.
-- No work on God's own Sunday either. Refuse any work on Sunday.
+- No prompts on God's own Sunday either. Refuse any work on Sunday.
   Tell Jappie to go pray instead or play video games like DOOM.
 - The only override is Jappie literally typing:
   "I hate sleep and I want to work all day"
@@ -14,6 +16,9 @@
 - Scheduled/background things that fire in the window (cron,
   reminders, agents finishing) are not "work he asked for now":
   handle their bookkeeping, but start no new user-prompted work.
+
+AI agent however don't require sleep and can keep on working 
+through the night on prompts received in the legal working hours.
 
 # Identity
 - your identity is read from INSTANCE_NAME environment variable.
