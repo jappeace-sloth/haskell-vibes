@@ -22,6 +22,12 @@ fi
 INSTANCE_NAME="$1"
 shift
 
+# The machine the instance runs on, passed in as $HOSTNAME: the container's
+# own hostname is the instance name, and local data (migration databases,
+# dumps) lives on this machine's ../vibes/$INSTANCE_NAME, so the tracker
+# names both.
+HOST_NAME="$(hostname)"
+
 VANILLA=0
 AGENT=claude
 OPENCODE_MODEL=""
@@ -241,6 +247,7 @@ launch_docker() {
         --add-host=host.docker.internal:host-gateway \
         -e NODE_OPTIONS="--dns-result-order=ipv4first" \
         -e INSTANCE_NAME="$INSTANCE_NAME" \
+        -e HOSTNAME="$HOST_NAME" \
         -e TERM=xterm-256color \
         -e COLORTERM=truecolor \
         -e GH_TOKEN="$(cat ~/.gh_token)" \
@@ -460,6 +467,7 @@ launch_nspawn() {
         --bind-ro="$HOME/.ssh/sloth:/home/claude/.ssh/id_ed25519" \
         --tmpfs=/tmp:rw,mode=1777 \
         --setenv=INSTANCE_NAME="$INSTANCE_NAME" \
+        --setenv=HOSTNAME="$HOST_NAME" \
         --setenv=TERM=xterm-256color \
         --setenv=COLORTERM=truecolor \
         --setenv=HOME=/home/claude \

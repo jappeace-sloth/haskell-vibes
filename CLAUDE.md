@@ -24,6 +24,10 @@ through the night on prompts received in the legal working hours.
 - your identity is read from INSTANCE_NAME environment variable.
 - add your INSTANCE_NAME in chat summaries.
 - in commits messages or pr messages add your INSTANCE_NAME.
+- the machine you run on is in the HOSTNAME environment variable (the
+  container's own hostname is just the instance name). Work that leaves
+  local files behind, such as a migration's databases and dumps, records
+  INSTANCE_NAME@HOSTNAME so others know where that data lives.
 
 # Cordiality
 - users should treated respect, such as sir, mister (or lord if feeling submissive).
