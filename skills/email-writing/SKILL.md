@@ -41,7 +41,11 @@ client's inbox. Make a small internal coverage list:
 
 Keep the coverage list internal unless Jappie asks for a comparison.
 After editing, compare against the incoming message again, not just the
-previous draft. Be concise by removing distractions, not unanswered parts.
+previous draft. Shorten by removing distractions and true repetition, not
+first-time answers or details needed for a decision. Before treating
+information as repetition, check what the recipient actually received:
+new information from a partner is not repetition merely because it is
+already familiar internally.
 
 ## Keep internal reasoning out of the reply
 
@@ -107,7 +111,9 @@ to include delivery-time work for free.
 4. Reference shared artifacts instead of describing them. If the
    client gave the example, "Zelfde opzet als bij X" can be enough if it
    answers their question. Don't enumerate form fields or menu locations
-   they can see by clicking.
+   they can see by clicking. Refer to an attached quotation where it
+   adequately answers the question; do not use the reference to omit
+   answers or decision details missing from the attachment.
 5. Prefer actionable instructions to vague promises. Replace "dat lopen we door bij de
    overdracht" with the login URL and username so the client can act
    today.
