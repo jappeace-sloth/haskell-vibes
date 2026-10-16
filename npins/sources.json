@@ -22,16 +22,16 @@
       },
       "branch": "dev",
       "submodules": false,
-      "revision": "8de96d60a42f1213825f3d33806123ff6338d47d",
-      "url": "https://github.com/anomalyco/models.dev/archive/8de96d60a42f1213825f3d33806123ff6338d47d.tar.gz",
-      "hash": "sha256-fDZXGIj/fJdnA4s0pIO5LIwPSnRvjonor7EjhSRF68A="
+      "revision": "060ca3bfa834723fa9196401b2f3b5213014aa13",
+      "url": "https://github.com/anomalyco/models.dev/archive/060ca3bfa834723fa9196401b2f3b5213014aa13.tar.gz",
+      "hash": "sha256-hQX/FGuglFFnmHG8NcIPB0iYQcRAigW04WCFysmF7jo="
     },
     "nixpkgs": {
       "type": "Channel",
       "name": "nixpkgs-unstable",
       "artifact": "nixexprs.tar.xz",
-      "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.11pre1081052.f45c6f04c2f0/nixexprs.tar.xz",
-      "hash": "sha256-k0ouG9zZIYS9D2B6yADfOoMbcUDSBrFg+tfHuUgbHDU="
+      "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.11pre1092923.95b2dd0e78e6/nixexprs.tar.xz",
+      "hash": "sha256-TF4mt/HjbvrAgfl6dA5PDetqv/HHKvraFshP72XG434="
     },
     "tmux-mcp": {
       "type": "Git",
