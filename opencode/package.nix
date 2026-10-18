@@ -10,7 +10,8 @@
 # tagged `:skill` like MCP prompts are tagged `:mcp`. Upstream skips them there
 # and offers only the `/skills` selector, although `/<skill>` already runs one as
 # a command. The patch reverts that hunk of anomalyco/opencode#11547, which gave
-# no reason; drop it once #35341 (skills in the root `/` list) lands upstream.
+# no reason for hiding them; drop it once #35341 (skills in the root `/` list)
+# lands upstream.
 # Alternative: a TUI plugin registering a slash command per skill.
 # Rejected: it goes through `api.command`, which upstream marks for removal in
 # v2 (tui/src/plugin/command-shim.ts), and duplicates the server's skill commands.
