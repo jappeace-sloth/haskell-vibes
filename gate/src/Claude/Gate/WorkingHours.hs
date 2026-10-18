@@ -87,8 +87,7 @@ workingHoursWarning now =
 -- is rest all day; other days rest runs from 22:45 up to 07:00.
 outsideWorkingHours :: LocalTime -> Maybe OutsideWorkingHours
 outsideWorkingHours localNow =
-  if | dayOfWeek (localDay localNow) == Sunday -> Just SundayRest
-     | localTimeOfDay localNow >= TimeOfDay 22 45 0 -> Just NightRest
+  if | localTimeOfDay localNow >= TimeOfDay 22 45 0 -> Just NightRest
      | localTimeOfDay localNow < TimeOfDay 7 0 0 -> Just NightRest
      | otherwise -> Nothing
 
