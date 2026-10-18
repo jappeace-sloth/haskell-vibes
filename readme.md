@@ -122,7 +122,9 @@ the default on each container launch.
 
 Everything else stays the same: the container, the vibes clone, the GitHub
 bot, the MCP servers (playwright, hoogle, tmux) and `CLAUDE.md` plus `skills/`,
-which opencode reads through its Claude Code compatibility fallbacks. On the
+which opencode reads through its Claude Code compatibility fallbacks. Skills
+show up in the TUI's `/` autocomplete tagged `:skill` (upstream lists them only
+under `/skills`; see `opencode/package.nix`). On the
 first launch run `/connect` inside the TUI, pick OpenAI and then ChatGPT
 Plus/Pro, and open the printed URL in the host browser; the login lands in
 `instances/<name>-opencode/` and is reused on later launches. Pick a model with

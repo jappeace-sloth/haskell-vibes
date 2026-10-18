@@ -20,7 +20,7 @@ assert package.devDependencies."@opencode-ai/plugin" == opencode.version;
 assert package.devDependencies."@opencode-ai/sdk" == opencode.version;
 pkgs.runCommand "ci-opencode-stopgate"
   {
-    nativeBuildInputs = [ pkgs.nodejs opencode pkgs.coreutils ];
+    nativeBuildInputs = [ pkgs.nodejs opencode pkgs.coreutils pkgs.tmux ];
     CLAUDE_GATE_TEST_BINARY = "${claudeGate}/bin/claude-gate";
     OPENCODE_TEST_NODE_MODULES = "${nodeModules}/node_modules";
   } ''
@@ -30,6 +30,6 @@ pkgs.runCommand "ci-opencode-stopgate"
   cd opencode
   npm run typecheck
   npm test
-  node --test test/server-smoke.js test/system-prompt.js
+  node --test test/server-smoke.js test/system-prompt.js test/skill-autocomplete.js
   touch $out
 ''
