@@ -37,11 +37,13 @@ The patch also drops the Git safety rails that jappeace/vibes#124 kept (no
 amending, force-pushing, skipping hooks or changing Git config unless asked).
 Git policy now comes only from `CLAUDE.md`.
 
-`test/system-prompt.js` runs the patched server against a recording provider
-fixture and checks the request: the system prompt starts with the environment
-block and contains `~/.claude/CLAUDE.md`, the one skill the fixture installs is
-the only skill in both the system prompt and the v2 registry, and no tool
-description mentions committing. `check.nix` runs it in CI.
+`test/system-prompt.js` runs the patched server with the launcher's
+`opencode.json` (`opencode-config.sh`) against a recording provider fixture
+and checks the request: the system prompt starts with the environment block
+and contains `~/.claude/CLAUDE.md`, the one skill the fixture installs under
+`~/.claude/skills` is the only skill in both the system prompt and the v2
+registry, and no tool description mentions committing. `check.nix` runs it in
+CI.
 
 Build the patched package independently of the container:
 

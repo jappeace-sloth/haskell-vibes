@@ -49,8 +49,9 @@ done
 # instance name, not a separate launcher script. Everything else about an
 # instance (container, vibes clone, character, GitHub bot, ssh key, MCP
 # servers) is harness-independent, and opencode reads ~/.claude/CLAUDE.md
-# and ~/.claude/skills as Claude Code fallbacks, so the existing config
-# mounts carry over unchanged. Alternative considered: a copy of this script
+# and ~/.claude/skills as Claude Code fallbacks (skills also through
+# opencode-config.sh), so the existing config mounts carry over unchanged.
+# Alternative considered: a copy of this script
 # per harness. Rejected: the nspawn/docker plumbing is the bulk of the file
 # and would drift. Only the final command, opencode's config file and its
 # state directory differ. `codex` (the OpenAI CLI) is not wired: Jappie
@@ -119,29 +120,8 @@ MCP_CONFIG='{"playwright":{"command":"playwright-mcp","args":["--headless","--no
 UPDATED_JSON=$(jq --argjson mcp "$MCP_CONFIG" 'del(.mcpServers) | .mcpServers = $mcp | if .projects then .projects |= map_values(del(.mcpServers)) else . end' "$INSTANCE_JSON")
 echo "$UPDATED_JSON" > "$INSTANCE_JSON"
 
-# Decision: opencode's global config is derived from MCP_CONFIG with jq
-# instead of being a second hand-maintained server list, so both harnesses
-# always get the same MCP servers. `permission: "allow"` is opencode's
-# bypassPermissions: the container is the sandbox, exactly as for claude.
-# The optional --model pins the launch default: /models remembers choices under
-# ~/.local/state/opencode, which is not persisted across container launches.
-# Without --model, retain model discovery because ChatGPT plan access varies.
-# autoupdate is off because the binary comes from nix. The file
-# is written into the per-launch config snapshot and bind-mounted read-only
-# like CLAUDE.md, so the agent cannot widen its own permissions.
-write_opencode_config() {
-    jq -n --argjson mcp "$MCP_CONFIG" --arg model "$OPENCODE_MODEL" '{
-        "$schema": "https://opencode.ai/config.json",
-        autoupdate: false,
-        permission: "allow",
-        plugin: ["file:///etc/opencode/stopgate.ts"],
-        mcp: ($mcp | with_entries(.value = {
-            type: "local",
-            command: ([.value.command] + .value.args),
-            enabled: true
-        }))
-    } + (if $model != "" then {model: $model} else {} end)' > "$1/opencode.json"
-}
+# shellcheck source=opencode-config.sh
+. "$(pwd)/opencode-config.sh"
 
 # Decision: opencode's own models.dev fetch is disabled
 # (OPENCODE_DISABLE_MODELS_FETCH=1) and the catalogue is the file nix bakes
@@ -227,7 +207,7 @@ launch_docker() {
     # vibes clone).
     AGENT_MOUNTS=()
     if [ "$AGENT" = "opencode" ]; then
-        write_opencode_config "$CONFIG_SNAPSHOT"
+        write_opencode_config "$CONFIG_SNAPSHOT" "$MCP_CONFIG" "$OPENCODE_MODEL" "$VANILLA"
         AGENT_MOUNTS+=("-v" "$CONFIG_SNAPSHOT/opencode.json:/home/claude/.config/opencode/opencode.json:ro")
         AGENT_MOUNTS+=("-v" "$OPENCODE_DATA_DIR:/home/claude/.local/share/opencode")
         for models_var in "${OPENCODE_MODELS_ENV[@]}"; do
@@ -417,7 +397,7 @@ launch_nspawn() {
     # `opencode <project>`.
     AGENT_BINDS=()
     if [ "$AGENT" = "opencode" ]; then
-        write_opencode_config "$CONFIG_SNAPSHOT"
+        write_opencode_config "$CONFIG_SNAPSHOT" "$MCP_CONFIG" "$OPENCODE_MODEL" "$VANILLA"
         AGENT_BINDS+=("--bind-ro=$CONFIG_SNAPSHOT/opencode.json:/home/claude/.config/opencode/opencode.json")
         AGENT_BINDS+=("--bind=$OPENCODE_DATA_DIR:/home/claude/.local/share/opencode")
         AGENT_BINDS+=("--chdir=/home/claude")

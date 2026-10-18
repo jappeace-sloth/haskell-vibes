@@ -15,13 +15,18 @@ let
     src = ./.;
     filter = path: _type: baseNameOf path != "node_modules";
   };
+  launcher = pkgs.lib.fileset.toSource {
+    root = ../.;
+    fileset = ../opencode-config.sh;
+  };
 in
 assert package.devDependencies."@opencode-ai/plugin" == opencode.version;
 assert package.devDependencies."@opencode-ai/sdk" == opencode.version;
 pkgs.runCommand "ci-opencode-stopgate"
   {
-    nativeBuildInputs = [ pkgs.nodejs opencode pkgs.coreutils ];
+    nativeBuildInputs = [ pkgs.nodejs opencode pkgs.coreutils pkgs.bash pkgs.jq ];
     CLAUDE_GATE_TEST_BINARY = "${claudeGate}/bin/claude-gate";
+    OPENCODE_LAUNCHER_CONFIG = "${launcher}/opencode-config.sh";
     OPENCODE_TEST_NODE_MODULES = "${nodeModules}/node_modules";
   } ''
   cp -r ${source} opencode
