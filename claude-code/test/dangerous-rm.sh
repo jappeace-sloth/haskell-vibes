@@ -4,11 +4,13 @@
 # recording_provider.py asking for one Bash call.
 # Usage: dangerous-rm.sh <vibes checkout>
 #
-# Decision: a PermissionRequest hook on Bash answers "allow", so the built-in
-# dangerous rm check (rm -rf ~, rm -rf $(...), rm -rf "$UNSET"/*) never waits
-# for Jappie. Rejected: allow rules (the check refuses to be auto-allowed by
-# them) and the undocumented CLAUDE_CODE_DISABLE_*_RM_PROMPT variables (they
-# skip only two of the removal kinds). The matcher stays on Bash so
+# Decision: a PermissionRequest hook on Bash answers "allow", so the
+# critical-path rm check (rm -rf ~, rm -rf $(...), rm -rf "$UNSET"/*) never
+# waits for Jappie; the docs name that hook as the one that may answer it
+# (https://code.claude.com/docs/en/permission-modes#critical-paths).
+# Rejected: allow rules and PreToolUse "allow" (the check refuses both) and
+# CLAUDE_CODE_DISABLE_{SUBSTITUTION,INLINE_SHELL}_RM_PROMPT (each turns off
+# one kind, the other checks keep running). The matcher stays on Bash so
 # AskUserQuestion still reaches him.
 set -euo pipefail
 
