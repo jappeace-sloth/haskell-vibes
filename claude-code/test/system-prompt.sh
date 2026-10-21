@@ -7,6 +7,7 @@ set -euo pipefail
 VIBES="$1"
 TEST_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$VIBES/agent-command.sh"
+. "$TEST_DIR/fixture.sh"
 
 SCRATCH="$(mktemp -d)"
 trap 'rm -rf "$SCRATCH"' EXIT
@@ -21,27 +22,13 @@ echo '{"hasCompletedOnboarding": true}' > "$HOME/.claude.json"
 # launched the way claude.sh launches instance $1 (vanilla flag 0 or 1).
 record_turn() {
     local requests="$SCRATCH/requests-$1"
-    python3 "$TEST_DIR/recording_provider.py" "$requests" "$SCRATCH/port-$1" > "$SCRATCH/provider-$1.log" 2>&1 &
-    local provider=$!
-    while [ ! -f "$SCRATCH/port-$1" ]; do
-        if ! kill -0 "$provider" 2> /dev/null; then
-            echo "FATAL: recording_provider.py exited before listening:" >&2
-            cat "$SCRATCH/provider-$1.log" >&2
-            exit 1
-        fi
-        sleep 0.1
-    done
+    start_provider "$SCRATCH/provider-$1.log" "$requests" "$SCRATCH/port-$1"
     set_agent_command claude "$1"
     # set -e is off inside the $(record_turn ...) substitution, so a claude
     # crash after its first request has to be caught explicitly.
     local claude_status=0
-    (cd "$SCRATCH/work" && env -u CLAUDE_CONFIG_DIR \
-        ANTHROPIC_BASE_URL="http://127.0.0.1:$(cat "$SCRATCH/port-$1")" \
-        ANTHROPIC_API_KEY=fixture \
-        DISABLE_AUTOUPDATER=1 \
-        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
-        timeout 120 "${AGENT_COMMAND[@]}" -p "hi" < /dev/null > /dev/null) || claude_status=$?
-    kill "$provider"
+    fixture_turn "$SCRATCH/work" || claude_status=$?
+    kill "$PROVIDER_PID"
     if [ "$claude_status" -ne 0 ]; then
         echo "FATAL: claude exited with status $claude_status (vanilla flag $1)" >&2
         exit 1

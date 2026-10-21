@@ -11,6 +11,10 @@ After using this, you just have to verify the code and tests produced are what y
 The container prevents it from doing grotesque mistakes,
 like stealing secrets or deleting your disk.
 
+Claude Code still stops for a person before some removals in that mode
+(`rm -rf ~`, `rm -rf $(...)`), so `settings.json` answers those prompts with a
+`PermissionRequest` hook; `claude-code/test/dangerous-rm.sh` checks it still does.
+
 You can run multiple instances at the same time.
 Allowing you to bypass the need to make it smart or lazy.
 
