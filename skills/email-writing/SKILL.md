@@ -30,7 +30,8 @@ client's inbox. Make a small internal coverage list:
    compound questions: "where is this used, in links or in Google?" has
    more than one part. A status update need not receive its own paragraph.
 2. Match each actionable point to a direct answer, a verified result or
-   a clearly stated open dependency. Mark unknowns instead of inventing
+   a clearly stated open dependency, in the mail or its attached quotation.
+   Read the attachment before counting a point as covered. Mark unknowns instead of inventing
    certainty. Distinguish approved work, deployed work and verified work.
 3. Answer the practical choice behind the wording. "The photo boxes now
    match" does not fully answer "must I edit my images?" Add "De
@@ -46,6 +47,47 @@ first-time answers or details needed for a decision. Before treating
 information as repetition, check what the recipient actually received:
 new information from a partner is not repetition merely because it is
 already familiar internally.
+
+## A quotation cover email is not a second quotation
+
+When the answers are in the attached quotation, check coverage across the
+mail and attachment together. Do not reproduce the quote point by point.
+A long or numbered incoming email does not require a long or numbered
+cover email. Nor do earlier long replies justify keeping this one long.
+
+For each paragraph, decide whether it belongs in the mail:
+
+- Keep what the attachment is, the main change the client needs to notice,
+  and the decision or next action required from them.
+- Keep a short warning when the offer cannot meet an explicit requirement.
+  For example, restricted accounts do not necessarily prevent remote login
+  or editing existing products. Do not bury that mismatch behind “see quote”.
+- Keep essential cost-control promises, such as confirming an unknown
+  quantity and total before starting and allowing a smaller selection.
+  Preserve the actual authorization terms: notice of a total is not the
+  same as approval of it. Do not treat selection of an option as permission
+  for an unlimited bill or invent a new approval policy while shortening.
+- Remove repeated scope lists, prices already clear in the attachment,
+  worked totals, technical mechanisms, test procedures and explanations of
+  why we chose an implementation. Keep a price in the mail if it is needed
+  to explain a changed charge or resolve a price objection.
+- Combine acceptance of the quote and choices about optional work into one
+  closing question. Do not reopen choices already settled by Jappie or
+  invent acceptance by the client.
+
+Start again from those retained points rather than shortening every old
+paragraph by a few words. A useful shape is: attachment and main change,
+one or two decision-critical caveats, then the bundled acceptance question.
+For a routine cover email, aim for roughly 100–180 words, not a quota:
+necessary answers take priority, but every extra paragraph needs a reason
+the attachment cannot serve. Do not compress a checklist into a giant sentence.
+
+When editing a saved draft, update companion notes that still defend the
+old length or describe deleted wording. Leave the quotation's scope,
+prices and actual sent correspondence unchanged unless asked otherwise.
+
+The [Kralenstulpje example](quote-cover-example.md) shows the cut from
+616 to 134 words and why the remaining details earned their place.
 
 ## Keep internal reasoning out of the reply
 
@@ -127,7 +169,8 @@ to include delivery-time work for free.
    handover, which caps the damage of any leak.
 7. Give options their own trade-off. Each option gets its approved price and
    a one-line pro/con inline. No separate "mijn advies"-paragraph; the
-   list is the advice, the client chooses.
+   list is the advice, the client chooses. For a quotation cover email,
+   leave that comparison in the attachment when it is already clear there.
 8. State dependencies as facts, not deadline pressure. "Zodra ik de
    teksten heb verwerk ik ze meteen, daarna kan de site live." Never
    "lukt het je om deze week..." conditionals.
@@ -190,7 +233,8 @@ After cleanup:
 Before presenting a draft:
 
 - Compare it point by point with the incoming email. Cover every actionable
-  question and objection, including the parts inside compound questions.
+  question and objection, including the parts inside compound questions,
+  across the mail and any attachment. Coverage does not require duplication.
 - Remove internal process, sales reasoning, unnecessary repetition and
   extra asks. Retain short explanations needed for scope or decisions.
 - Check prices and concessions against Jappie's approval. Check done-form
