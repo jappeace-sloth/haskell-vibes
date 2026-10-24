@@ -86,8 +86,8 @@ When editing a saved draft, update companion notes that still defend the
 old length or describe deleted wording. Leave the quotation's scope,
 prices and actual sent correspondence unchanged unless asked otherwise.
 
-The [Kralenstulpje example](quote-cover-example.md) shows the cut from
-616 to 134 words and why the remaining details earned their place.
+Keep client correspondence and identifying examples in the client's private
+repository. Public skill examples must be fictional and non-identifying.
 
 ## Keep internal reasoning out of the reply
 
