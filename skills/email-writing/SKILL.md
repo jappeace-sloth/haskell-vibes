@@ -5,11 +5,6 @@ description: Write and review client-facing emails in Jappie's voice, especially
 
 # Client Email Writing
 
-Distilled from Jappie's own cleanup of a drafted client mail (jappiesoft
-`1f9378f`, "cleanup the email, less chatty"). The draft was correct and
-complete; his edit cut it to less than half. Every cut followed the same
-principle:
-
 The mail exists for the client's use and decisions, not as a work log.
 Cut process narration, demonstrations of effort and internal commercial
 reasoning. Keep a short explanation when the client needs it to understand
@@ -91,8 +86,6 @@ repository. Public skill examples must be fictional and non-identifying.
 
 ## Keep internal reasoning out of the reply
 
-Distilled from the CanyonZone reply review (jappiesoft #483, 8 October 2026):
-
 - Do not reopen pricing, concessions or old sales pressure just because
   the history mentions them. A request to delay can need only a new
   expected date, not an unsolicited reassurance about price. Include
@@ -126,16 +119,8 @@ Distilled from the CanyonZone reply review (jappiesoft #483, 8 October 2026):
   easy. Do not reintroduce resolved items or imply an unsent draft was
   received. Keep optional upgrades separate from migration corrections.
 
-For an approved concession, a short boundary and reason can be useful:
-
-> De offerte omvat het overzetten van de gegevens en pagina's en het zo
-> goed mogelijk nabootsen van het uiterlijk, niet het één-op-één overnemen
-> van alle functies. De levertijd bij uitverkochte artikelen neem ik na
-> heroverweging wel zonder extra kosten mee, omdat die informatie bij het
-> bestellen hoort. Het eerdere aanbod van €150 vervalt daarmee.
-
-This is an example of a specific approved decision, not a standard policy
-to include delivery-time work for free.
+For an approved concession, state its exact scope and whether it replaces
+an earlier charge. Do not turn one client's agreement into a general policy.
 
 ## Rules
 
@@ -206,27 +191,17 @@ into the client's inbox. A `---` separator in one file still depends on a
 careful selection, which is why it was replaced (Jappie, 8 October 2026).
 The subject lives in the notes because it is pasted into its own field.
 
-## Before / after
+## Fictional shortening example
 
-Draft:
+Invented draft, not client correspondence:
 
-> Haha, je hebt gelijk, die kleur klopte niet! Ik heb de kleur van je
-> logo nagemeten en die bleek op een onzichtbaar verschil na overeen te
-> komen met de knopkleur, dus die gebruik ik nu overal. Je schreef dat
-> je de codes eerder had gestuurd, maar die heb ik nergens ontvangen;
-> stuur ze anders nog even als tekst. De teksten kun je straks zelf
-> aanpassen, dat lopen we samen door bij de oplevering. Zou het je
-> lukken de foto's deze week aan te leveren? Dan kan de site daarna
-> live.
+> Ik heb uitgebreid naar de agenda gekeken en alle beschikbare dagen
+> vergeleken. De afspraak kan verplaatst worden naar woensdag. Ik hoor
+> graag of dat voor jou uitkomt en of ik die dag kan vastleggen.
 
-After cleanup:
+Shortened:
 
-> De kleuren van je logo staan er nu op. De teksten kun je zelf
-> aanpassen; inloggen kan op https://voorbeeld.nl/wp-admin/ met
-> gebruikersnaam anna, wachtwoord: [veiligwachtwoorddelen-link].
-> Zodra ik de foto's heb zet ik ze erin, daarna kan de site live.
->
-> Hoor graag of de kleuren zo kloppen!
+> De afspraak kan naar woensdag. Komt dat uit?
 
 ## Review checklist
 
