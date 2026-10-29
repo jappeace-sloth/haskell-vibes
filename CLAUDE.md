@@ -87,41 +87,18 @@ own project clone, but you cannot write back into it.
   truth is just lies you choose to believe.
 
 # Code comments
-- Every comment must add information the intended reader needs: design reasoning,
-  a contract, invariant, constraint, or explanation of non-obvious behaviour.
-  Delete narration of obvious code and repetition of names or types.
-- Prefer clearer names, types, or structure when they remove the need for an
-  explanation. Do not refactor merely to eliminate a useful comment.
-- No section-banner comments: a ruled line, a title, another ruled line
-  (`-- ------` / `-- The plan` / `-- ------`). To separate code, split it into
-  modules named after what they contain. Haddock `-- *` headings in an export
-  list are API documentation and stay.
-- Ordinary implementation comments should normally be one or two sentences.
-  Above three prose lines at normal wrapping width, stop and try to shorten.
-  Keep extra detail only when removing it loses necessary information; do not
-  split the same explanation into smaller comments to evade this check.
-- Preserve needed API documentation, examples, proofs, and subtle invariants.
-  Retain required legal and tool-directive comments.
-- Use GHC-style `Note [Topic]` comments for substantial explanations of design,
-  invariants, and interactions. Explain the higher-level idea with useful examples
-  or counterexamples, not a paraphrase of the code. Keep references at relevant
-  code sites short (`See Note [Topic]`); put the full explanation in one place.
-- Keep comments accurate as code changes. Preserve relevant history, failed
-  approaches, and debugging findings when they explain a constraint or prevent
-  a mistake. Put the fuller change narrative in commit messages; these comment
-  length limits do not apply to commit messages.
-- Before finishing, review added and changed comments: remove every sentence
-  whose deletion loses no useful information. Keep significant Decision:
-  comments to the choice, relevant alternatives, and decisive reason.
-
-For details, see [the code-comment research](docs/code-comment-quality.md).
+The rules for comments live in the `code-comments` skill. Load it before
+writing, editing or reviewing any comment or declaration documentation. The
+short version: readers can read code, so a comment gives the why, a contract
+for callers, or the reason behind an oddity; it never narrates how the
+implementation works.
 
 # Style
 - Avoid using wildcards on pattern matching if possible, always write out all cases.
 - Always add type signatures to top level bindings, try make types as restrictive as possible.
 - If a function remains confusing after improving its names and structure,
   document the missing contract or rationale at its declaration, following
-  [Code comments](#code-comments).
+  the `code-comments` skill.
 - Avoid generic names, use more specific names where possible. Keep them succinct.
   - This is especially important for modules: Avoid Types, Records or Functions, instead name modules after what's inside of them.
     If you can't figure it out split em up.
@@ -168,7 +145,7 @@ For details, see [the code-comment research](docs/code-comment-quality.md).
   `# Decision:` in Nix/shell/YAML, `// Decision:` in C-likes. Search across
   languages with `grep -rn 'Decision:'` (or `'[-#/]* *Decision:'`).
 - Format: what was chosen, what alternatives were considered, and why.
-  Apply the brevity checkpoint in [Code comments](#code-comments).
+  Apply the brevity checkpoint from the `code-comments` skill.
 - Do NOT write decisions to memory — memory is per-instance and is not shared
   across agents or preserved in version control.
 
