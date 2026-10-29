@@ -11,10 +11,12 @@ odd. Everything else is noise that goes stale.
 
 ## Never describe the implementation
 
-A comment that says what the code does is banned. "Loop over the orders and
-sum the totals", "increment the retry counter", "call the handler with the
-parsed body": the reader sees that by reading the next line, and when the
-line changes the comment lies.
+A comment inside an implementation that says what the code does is banned.
+"Loop over the orders and sum the totals", "increment the retry counter",
+"call the handler with the parsed body": the reader sees that by reading the
+next line, and when the line changes the comment lies. Declaration
+documentation is the one place "what" belongs, as a contract for callers who
+should not have to read the body; see below.
 
 The one exception is an odd implementation: code that a competent reader
 would pause at and ask "why on earth is it done like this?". Then the
@@ -90,8 +92,9 @@ Review every added or changed comment:
 
 1. Does it describe what the code does? Delete it, unless the code is odd and
    the comment explains why. Then rewrite it so it states the reason.
-2. Does any sentence repeat a name, a type, or the next line of code? Remove
-   that sentence.
+2. Remove every sentence whose deletion loses no useful information. A
+   sentence that repeats a name, a type, or the next line of code always
+   fails this test.
 3. Is a `Decision:` comment down to the choice, the relevant alternatives,
    and the decisive reason?
 4. Would the comment survive the next refactor of the lines beneath it? If it

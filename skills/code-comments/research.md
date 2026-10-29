@@ -54,13 +54,15 @@ algorithm works. Neither needs each obvious statement translated into English.
 Google makes these distinctions explicitly; the kernel's stronger ban on “how”
 is a project convention rather than an established universal.[^review][^cpp][^linux]
 
-Policy decision (29 October 2026): this skill adopts the kernel's line anyway.
-Comments that describe the implementation are banned; the carve-out for an
-irreducibly tricky algorithm that Google allows becomes the skill's "odd
-implementation" exception, and even there the comment states why the code is
-shaped that way rather than walking through what it does. The reason is
-practical: we assume the reader can read code, and narration is the category of
-comment that goes stale fastest.
+Policy decision (29 October 2026): this skill goes further than the kernel.
+The kernel bans "how" but asks for a function-head "what"; the skill bans "how"
+outright and also bans "what" narration inside implementations. "What" survives
+only as declaration documentation, where it is a contract for callers who should
+not need to read the body. Google's carve-out for an irreducibly tricky algorithm
+becomes the skill's "odd implementation" exception, and even there the comment
+states why the code is shaped that way rather than walking through it. The
+reason is practical: we assume the reader can read code, and narration is the
+category of comment that goes stale fastest.
 
 ## What deserves a comment?
 

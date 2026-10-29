@@ -89,8 +89,9 @@ own project clone, but you cannot write back into it.
 # Code comments
 The rules for comments live in the `code-comments` skill. Load it before
 writing, editing or reviewing any comment or declaration documentation. The
-short version: readers can read code, so a comment describes why, a contract,
-or an oddity, never what the code does.
+short version: readers can read code, so a comment gives the why, a contract
+for callers, or the reason behind an oddity; it never narrates how the
+implementation works.
 
 # Style
 - Avoid using wildcards on pattern matching if possible, always write out all cases.
