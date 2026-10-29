@@ -207,7 +207,8 @@ Tell it to write new skills if it keeps making the same mistake.
 ### Reference documentation
 Both launchers snapshot `docs/` alongside `CLAUDE.md` and mount it read-only at
 `/home/claude/.claude/docs`. This keeps relative documentation links in
-`~/.claude/CLAUDE.md` usable, including `docs/code-comment-quality.md`.
+`~/.claude/CLAUDE.md` usable. Research that backs a single skill lives next to
+that skill instead (`skills/code-comments/research.md`).
 The snapshot stays fixed for the session; relaunch to pick up changes.
 Like the project instructions and skills, this mount is skipped with `--vanilla`.
 

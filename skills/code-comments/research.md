@@ -15,7 +15,7 @@ For Claude, adopt an information-value check and a brevity checkpoint: ordinary
 implementation comments should normally be one or two sentences. A longer comment
 must earn its space with a concrete contract, invariant, constraint, or explanation
 of non-obvious behaviour. Remove redundant prose before removing useful knowledge.
-The rule is recorded in [CLAUDE.md](../CLAUDE.md#code-comments); the sentence budget
+The rule is recorded in [SKILL.md](SKILL.md); the sentence budget
 is a local policy choice, not a scientifically established limit.
 
 ## Scope and evidence
@@ -52,7 +52,15 @@ reader's task is explicit. A caller needs what an operation promises. A maintain
 needs why an unusual implementation exists and sometimes how an irreducibly tricky
 algorithm works. Neither needs each obvious statement translated into English.
 Google makes these distinctions explicitly; the kernel's stronger ban on “how”
-should not be generalized into a universal rule.[^review][^cpp][^linux]
+is a project convention rather than an established universal.[^review][^cpp][^linux]
+
+Policy decision (29 October 2026): this skill adopts the kernel's line anyway.
+Comments that describe the implementation are banned; the carve-out for an
+irreducibly tricky algorithm that Google allows becomes the skill's "odd
+implementation" exception, and even there the comment states why the code is
+shaped that way rather than walking through what it does. The reason is
+practical: we assume the reader can read code, and narration is the category of
+comment that goes stale fastest.
 
 ## What deserves a comment?
 
@@ -251,13 +259,13 @@ This describes what callers can rely on without inspecting the implementation.
 ```
 
 This records the choice, alternative, and decisive constraint required by the
-existing [Decision Log rule](../CLAUDE.md#decision-log). A longer argument can live
+existing [Decision Log rule](SKILL.md#form) in the skill. A longer argument can live
 in one named Note if it is needed; repeating the whole design discussion at every
 queue operation adds no value.[^cpp][^ghc]
 
-## CLAUDE.md rule
+## The skill's rule
 
-The [Code comments section in CLAUDE.md](../CLAUDE.md#code-comments) contains the
+[SKILL.md](SKILL.md) in this directory contains the
 rule. It applies to comments written or modified during a task, including
 declaration documentation. The brevity checkpoint applies specifically to ordinary
 implementation comments.
