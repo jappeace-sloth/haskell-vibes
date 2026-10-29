@@ -47,6 +47,27 @@ information as repetition, check what the recipient actually received:
 new information from a partner is not repetition merely because it is
 already familiar internally.
 
+## A repeated question means the last answer missed the goal
+
+Before answering, search the client's mail log for the same topic. If they
+ask it a second time, the earlier answer did not solve what they see, even
+if every sentence in it was true. Find the outcome they want, say whether
+it is reached now, and give the one step that reaches it. Do not repeat
+the mechanism.
+
+CanyonZone, 10 to 29 October 2026: Leen asked five times how to set the
+countries outside the EU to "manual tax" so they pay no VAT, and once sent
+a checkout screenshot showing "Taxes included". We answered each time that
+manual tax was not needed and Shopify charged no VAT there. That was true,
+but the price stayed the Dutch price including 21% VAT, while their FAQ
+promises the price without VAT. The fix, Dynamic tax display, appeared
+once as a side sentence and was then dropped. On 22 October we even wrote
+"De prijs van een artikel is er gelijk aan die in Nederland" as if that
+settled it. Gertjan found it himself the day before go-live, and one
+setting fixed it. Also: when a client keeps struggling with a setting we
+put on their own to-do list, offer to do it rather than explain it again,
+and ask Jappie first if that might be extra work.
+
 ## Keep internal reasoning out of the reply
 
 Distilled from the CanyonZone reply review (jappiesoft #483, 8 October 2026):
@@ -191,6 +212,8 @@ Before presenting a draft:
 
 - Compare it point by point with the incoming email. Cover every actionable
   question and objection, including the parts inside compound questions.
+- Search the mail log for each question. Asked before? Answer the outcome
+  the client wants this time, not the mechanism again.
 - Remove internal process, sales reasoning, unnecessary repetition and
   extra asks. Retain short explanations needed for scope or decisions.
 - Check prices and concessions against Jappie's approval. Check done-form
