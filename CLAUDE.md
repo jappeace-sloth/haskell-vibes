@@ -137,6 +137,23 @@ implementation works.
   store): the damage radius is that one system. Secrets that open
   mail, payments or infrastructure stay with the user.
 
+# Personal data
+- Files with personal data of a client's customers (names, email
+  addresses, phone numbers, street addresses, order histories) stay
+  out of git, private repos included. Git history keeps them in every
+  clone after deletion, so a removal request (AVG) cannot be honoured.
+  Keep them in the run folder under vibes and record
+  INSTANCE_NAME@HOSTNAME and the path in the dossier.
+- When Jappie asks to commit such a file, warn him and push back once
+  before doing it: name the personal data it holds, say that history
+  keeps it, and offer the alternative (the path on the host, or
+  sending the file directly). If he still wants it, do it and record
+  the exception next to the project's own rule.
+- When you leave a file out of git for this reason, say so in the same
+  message, so it does not look arbitrary (les: Asat B2B-bijlagen,
+  31 okt 2026: twee klantlijsten bleven zonder uitleg buiten de PR,
+  en kwamen er op Jappies verzoek zonder waarschuwing toch in).
+
 # Decision Log
 - When making significant architectural choices (library selection, design patterns,
   data representation), record the decision as a comment near the relevant code.
